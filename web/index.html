@@ -81,7 +81,7 @@
   <p class="hint">자동 생성된 카카오 방 이름을 바꿉니다. 저장 후 다음 수집(kit.py run)에서
      노트가 새 이름으로 정리됩니다. 비우면 자동 이름으로 되돌아갑니다.</p>
   <table id="roomsTable">
-    <thead><tr><th>chat_id</th><th>현재 이름</th><th>바꿀 이름</th></tr></thead>
+    <thead><tr><th>chat_id</th><th>현재 이름</th><th>바꿀 이름</th><th>수집 제외</th></tr></thead>
     <tbody></tbody>
   </table>
   <button class="save" id="saveRooms">방 이름 저장</button><span class="msg" id="roomsMsg"></span>
@@ -167,7 +167,9 @@ async function loadRooms() {
   for (const r of rooms) {
     const tr = document.createElement("tr");
     tr.innerHTML = `<td class="hint">${r.chat_id}</td><td>${r.name}</td>
-      <td><input value="${r.override || ""}" data-cid="${r.chat_id}"></td>`;
+      <td><input value="${r.override || ""}" data-cid="${r.chat_id}"></td>
+      <td style="text-align:center"><input type="checkbox" data-excl="${r.chat_id}"
+        ${r.excluded ? "checked" : ""}></td>`;
     tb.appendChild(tr);
   }
 }
@@ -175,7 +177,9 @@ async function loadRooms() {
 $("#saveRooms").onclick = async () => {
   const room_names = {};
   document.querySelectorAll("[data-cid]").forEach(i => room_names[i.dataset.cid] = i.value.trim());
-  const r = await fetch("/api/rooms", {method:"POST", body: JSON.stringify({room_names})});
+  const exclude_rooms = [];
+  document.querySelectorAll("[data-excl]").forEach(c => { if (c.checked) exclude_rooms.push(c.dataset.excl); });
+  const r = await fetch("/api/rooms", {method:"POST", body: JSON.stringify({room_names, exclude_rooms})});
   $("#roomsMsg").textContent = r.ok ? "저장됨 ✓ — 다음 kit.py run 에서 반영" : "저장 실패";
 };
 

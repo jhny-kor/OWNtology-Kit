@@ -27,7 +27,9 @@ DEFAULTS: dict = {
     "pipeline": {"member_stubs": True, "link_nodes": True,
                  "personal_layer": True, "daily_rollup": True},
     "kakao": {"min_messages": 1, "include_services": False,
-              "self_chat_id": "", "room_names": {}, "chat_aliases": {}},
+              "self_chat_id": "", "room_names": {}, "chat_aliases": {},
+              # 수집에서 제외할 방(이름 또는 chat_id) — 민감한 대화 제외용
+              "exclude_rooms": []},
     "sms": {"limit": 500},
     "mail": {"days": 14, "limit": 300},
     "github": {"username": "", "user_context": ""},

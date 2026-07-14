@@ -64,6 +64,17 @@ ARCHIVE_DB = Path(
 # Account owner's profile nickname; mapped to "나" for kmsg-compatible dedup.
 # 비어 있으면 본인 메시지가 "나"로 매핑되지 않는다 — 웹 설정 화면에서 입력.
 ME_NICKNAME = (_CFG.get("me", {}).get("kakao_nickname") or "").strip()
+
+# 수집 제외 방(config kakao.exclude_rooms) — 이름 또는 chat_id로 지정. 민감 대화 제외용.
+EXCLUDE_ROOMS = {str(x).strip().removeprefix("chat-")
+                 for x in (_KAKAO_CFG.get("exclude_rooms") or []) if str(x).strip()}
+
+
+def _excluded(chat_id: str, name: str) -> bool:
+    if chat_id in EXCLUDE_ROOMS or name in EXCLUDE_ROOMS:
+        log(f"제외: {name!r} (chat_id={chat_id}) — exclude_rooms")
+        return True
+    return False
 KST = timezone(timedelta(hours=9))
 UNKNOWN_NICK = "(알 수 없음)"
 
@@ -440,6 +451,8 @@ def main() -> int:
                 con, args.chats, args.all, args.named_only, args.min_messages
             ):
                 name = resolve(chat_id, chat_name)
+                if _excluded(chat_id, name):
+                    continue
                 data = export_chat(con, chat_id, name)
                 if name != chat_name:
                     # Renamed: write under a stable id slug and drop the old
@@ -462,6 +475,8 @@ def main() -> int:
                 args.include_services,
             ):
                 name = resolve(chat_id, nick)
+                if _excluded(chat_id, name):
+                    continue
                 data = export_chat(con, chat_id, name)
                 if data["count"] == 0:
                     continue
@@ -483,6 +498,8 @@ def main() -> int:
             n = 0
             for chat_id, auto in list_groups_by_participants(con, group_min):
                 name = resolve(chat_id, auto)
+                if _excluded(chat_id, name):
+                    continue
                 data = export_chat(con, chat_id, name)
                 if data["count"] == 0:
                     continue
@@ -497,6 +514,8 @@ def main() -> int:
             raw_id, _, label = spec.partition("=")
             chat_id = raw_id.strip().removeprefix("chat-")
             name = resolve(chat_id, label.strip() or f"chat-{chat_id}")
+            if _excluded(chat_id, name):
+                continue
             data = export_chat(con, chat_id, name)
             if data["count"] == 0:
                 log(f"WARN: chat_id {chat_id!r} has no text messages (skipped)")

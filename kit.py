@@ -166,7 +166,7 @@ def cmd_doctor(args) -> int:
     return 1 if n_fail else 0
 
 
-CORE_SOURCES = ("kakao", "sms", "mail", "notes", "safari_tabs")
+CORE_SOURCES = ("kakao", "sms", "mail")
 # 수집기가 '미설치/권한없음'을 알리는 종료코드 — 실패가 아니라 '건너뜀'으로 분류.
 _SKIP_EXIT_CODES = {2, 3}
 
@@ -314,6 +314,50 @@ def cmd_web(args) -> int:
     return subprocess.call([sys.executable, str(KIT / "web" / "server.py")])
 
 
+_DATE_RE = __import__("re").compile(r"(20\d{2}-\d{2}-\d{2})")
+
+
+def cmd_purge(args) -> int:
+    """수집 원문 삭제 / 보존기간 적용 (프라이버시 통제). 기본은 dry-run."""
+    vault = kitconfig.vault_path()
+    apply = args.apply
+    removed = 0
+
+    def rm(path: Path):
+        nonlocal removed
+        removed += 1
+        print(f"  {'DELETE' if apply else 'DRY '} {path.relative_to(vault)}")
+        if apply:
+            path.unlink()
+
+    if args.raw:
+        # 원문 폴더(source/) 전체 파일 삭제 — 대화 노트는 유지.
+        src = vault / "source"
+        if src.exists():
+            for f in sorted(src.rglob("*")):
+                if f.is_file():
+                    rm(f)
+    if args.older_than is not None:
+        from datetime import datetime, timedelta
+        cutoff = (datetime.now() - timedelta(days=args.older_than)).strftime("%Y-%m-%d")
+        # date frontmatter 또는 파일명 날짜가 cutoff 이전인 대화/원문 노트 삭제.
+        for folder in ("conversations", "source", "daily"):
+            base = vault / folder
+            if not base.exists():
+                continue
+            for f in sorted(base.rglob("*.md")):
+                head = f.read_text(encoding="utf-8", errors="ignore")[:400]
+                m = _DATE_RE.search(head) or _DATE_RE.search(f.name)
+                if m and m.group(1) < cutoff:
+                    rm(f)
+    if not args.raw and args.older_than is None:
+        print("아무 옵션도 없음 — --raw(원문 전체 삭제) 또는 --older-than N(보존기간) 지정")
+        return 2
+    print(f"\n{'삭제됨' if apply else 'dry-run 대상'}: {removed}건"
+          + ("" if apply else "  (실제 삭제는 --apply)"))
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="owntology-kit — 수집·온톨로지화 원터치")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -326,9 +370,15 @@ def main() -> int:
     r = sub.add_parser("run", help="collect + ontologize")
     r.add_argument("--fast-kakao", action="store_true")
     sub.add_parser("web", help="설정·수동입력 웹 화면")
+    pg = sub.add_parser("purge", help="원문 삭제 / 보존기간 적용 (기본 dry-run)")
+    pg.add_argument("--raw", action="store_true", help="source/ 원문 전체 삭제(대화 노트는 유지)")
+    pg.add_argument("--older-than", type=int, default=None, metavar="N",
+                    help="N일보다 오래된 대화/원문 노트 삭제")
+    pg.add_argument("--apply", action="store_true", help="실제 삭제(미지정 시 dry-run)")
     args = ap.parse_args()
     return {"init": cmd_init, "doctor": cmd_doctor, "collect": cmd_collect,
-            "ontologize": cmd_ontologize, "run": cmd_run, "web": cmd_web}[args.cmd](args)
+            "ontologize": cmd_ontologize, "run": cmd_run, "web": cmd_web,
+            "purge": cmd_purge}[args.cmd](args)
 
 
 if __name__ == "__main__":

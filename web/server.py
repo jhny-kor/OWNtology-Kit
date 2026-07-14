@@ -112,6 +112,7 @@ def get_rooms() -> list[dict]:
     vault = kitconfig.vault_path()
     cfg = kitconfig.load()
     overrides = cfg.get("kakao", {}).get("room_names") or {}
+    excluded = {str(x).strip() for x in (cfg.get("kakao", {}).get("exclude_rooms") or [])}
     applied_file = vault / "source" / "kakao" / ".room_names_applied.json"
     applied = {}
     if applied_file.exists():
@@ -119,14 +120,16 @@ def get_rooms() -> list[dict]:
             applied = json.loads(applied_file.read_text(encoding="utf-8"))
         except Exception:
             pass
-    rooms = [{"chat_id": cid, "name": name, "override": overrides.get(cid, "")}
+    rooms = [{"chat_id": cid, "name": name, "override": overrides.get(cid, ""),
+              "excluded": cid in excluded or name in excluded}
              for cid, name in sorted(applied.items(), key=lambda x: x[1])]
     return rooms
 
 
 def save_rooms(data: dict) -> dict:
     cfg = kitconfig.load()
-    room_names = cfg.setdefault("kakao", {}).setdefault("room_names", {})
+    kk = cfg.setdefault("kakao", {})
+    room_names = kk.setdefault("room_names", {})
     for cid, name in (data.get("room_names") or {}).items():
         cid = str(cid).strip()
         name = str(name).strip()
@@ -136,8 +139,11 @@ def save_rooms(data: dict) -> dict:
             room_names[cid] = name
         else:
             room_names.pop(cid, None)
+    # 수집 제외 방(chat_id 기준) — 웹에서 체크한 방만 반영
+    if "exclude_rooms" in data:
+        kk["exclude_rooms"] = [str(c).strip() for c in data["exclude_rooms"] if str(c).strip()]
     kitconfig.save(cfg)
-    return {"saved": len(room_names)}
+    return {"saved": len(room_names), "excluded": len(kk.get("exclude_rooms", []))}
 
 
 class Handler(BaseHTTPRequestHandler):

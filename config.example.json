@@ -24,7 +24,8 @@
     "include_services": false,
     "self_chat_id": "",
     "room_names": {},
-    "chat_aliases": {}
+    "chat_aliases": {},
+    "exclude_rooms": []
   },
   "sms": {
     "limit": 500
