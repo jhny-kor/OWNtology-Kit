@@ -3,10 +3,13 @@
 수집해 온톨로지 볼트로 만드는 원터치 CLI.
 
     python3 kit.py init         # config.json 생성 + 볼트 스캐폴드
+    python3 kit.py doctor       # 환경·설정·권한 사전 점검
     python3 kit.py collect      # 활성 소스 수집 (source/ 원문)
     python3 kit.py ontologize   # 원문 → 대화노트 → 엔티티/관계/인덱스/검증
     python3 kit.py run          # collect + ontologize 원터치
     python3 kit.py web          # 설정·수동입력 웹 화면 (127.0.0.1:8765)
+
+기본 수집 소스는 전부 꺼져 있다 — kit.py web 에서 켜야 수집한다.
 
 수집 단계는 권한/앱 문제 시 경고만 남기고 계속 진행한다.
 """
@@ -91,37 +94,163 @@ def cmd_init(args) -> int:
     if not readme.exists():
         readme.write_text(VAULT_README, encoding="utf-8")
     print(f"볼트 스캐폴드 완료: {vault}")
-    print("다음 단계: python3 kit.py web 으로 설정 입력 → python3 kit.py run")
+    print("\n⚠️ 개인정보 안내: 이 볼트에는 카카오톡·문자·메일·메모 등 원문이 "
+          "평문 마크다운으로 저장되며, 대화 상대 등 제3자의 개인정보가 포함될 수 있습니다.\n"
+          "  - 볼트를 공개 저장소·공유 폴더에 두지 마세요(iCloud/Dropbox 동기화 주의).\n"
+          "  - 자세한 내용은 PRIVACY.md 참고.")
+    print("\n다음 단계: python3 kit.py web 으로 설정 입력(수집 소스 켜기) → python3 kit.py run")
+    return 0
+
+
+def _which(name: str) -> bool:
+    return shutil.which(name) is not None
+
+
+def cmd_doctor(args) -> int:
+    """실행 전 환경·설정 사전 점검. 각 항목 OK/WARN/FAIL 표시."""
+    import platform
+    cfg = kitconfig.load()
+    src = cfg.get("sources", {})
+    rows: list[tuple[str, str]] = []
+
+    def add(status: str, msg: str):
+        rows.append((status, msg))
+
+    add("OK", f"macOS {platform.mac_ver()[0]}" if sys.platform == "darwin"
+        else f"⚠️ 이 킷은 macOS 전용 (현재: {sys.platform})")
+    pyv = sys.version_info
+    add("OK" if pyv >= (3, 11) else "FAIL",
+        f"Python {pyv.major}.{pyv.minor}" + ("" if pyv >= (3, 11) else " (3.11+ 필요)"))
+
+    vault = kitconfig.vault_path()
+    add("OK" if vault.exists() else "WARN",
+        f"볼트: {vault}" + ("" if vault.exists() else " (없음 — kit.py init 먼저)"))
+    if any(s in str(vault) for s in ("Mobile Documents", "Dropbox", "Google Drive", "OneDrive")):
+        add("WARN", "볼트가 클라우드 동기화 경로에 있습니다 — 평문 개인정보 유출 주의")
+
+    if src.get("kakao"):
+        add("OK" if _which("katok") else "FAIL", "katok CLI" + ("" if _which("katok")
+            else " 미설치 — github.com/NomaDamas/katok"))
+        add("OK" if (cfg.get("me", {}).get("kakao_nickname") or "").strip() else "WARN",
+            "카카오 닉네임" + ("" if (cfg.get("me", {}).get("kakao_nickname") or "").strip()
+            else " 미설정 — 카카오 수집이 건너뜁니다(kit.py web)"))
+    if src.get("sms"):
+        add("OK" if _which("imsg") else "FAIL", "imsg CLI" + ("" if _which("imsg")
+            else " 미설치 — github.com/openclaw/imsg"))
+        msgdb = Path("~/Library/Messages/chat.db").expanduser()
+        add("OK" if os.access(msgdb, os.R_OK) else "FAIL",
+            "Messages DB 접근" + ("" if os.access(msgdb, os.R_OK)
+            else " 불가 — 터미널에 Full Disk Access 부여"))
+    if src.get("safari_tabs"):
+        db = Path("~/Library/Containers/com.apple.Safari/Data/Library/Safari/CloudTabs.db").expanduser()
+        add("OK" if os.access(db, os.R_OK) else "FAIL",
+            "Safari CloudTabs.db" + ("" if os.access(db, os.R_OK)
+            else " 접근 불가 — iCloud 탭 동기화 + Full Disk Access 확인"))
+    if src.get("mail"):
+        add("WARN", "Mail.app 자동화 권한은 첫 collect 실행 시 팝업으로 허용해야 합니다")
+    if src.get("notes"):
+        add("WARN", "Notes.app 자동화 권한은 첫 collect 실행 시 팝업으로 허용해야 합니다")
+    if src.get("github_stars"):
+        add("OK" if (cfg.get("github", {}).get("username") or "").strip() else "FAIL",
+            "GitHub 사용자명" + ("" if (cfg.get("github", {}).get("username") or "").strip()
+            else " 미설정(kit.py web)"))
+    if not any(src.values()):
+        add("WARN", "수집 소스가 모두 꺼져 있음 — kit.py web 에서 켜세요")
+
+    icon = {"OK": "[OK]  ", "WARN": "[WARN]", "FAIL": "[FAIL]"}
+    print("owntology-kit doctor")
+    for status, msg in rows:
+        print(f"{icon.get(status, status)} {msg}")
+    n_fail = sum(1 for s, _ in rows if s == "FAIL")
+    print(f"\n요약: FAIL {n_fail} / WARN {sum(1 for s, _ in rows if s == 'WARN')}")
+    return 1 if n_fail else 0
+
+
+CORE_SOURCES = ("kakao", "sms", "mail", "notes", "safari_tabs")
+# 수집기가 '미설치/권한없음'을 알리는 종료코드 — 실패가 아니라 '건너뜀'으로 분류.
+_SKIP_EXIT_CODES = {2, 3}
+
+
+def _run_collector(name: str, cmd: list[str]) -> dict:
+    """수집기 1개 실행 → {name, status(ok|skip|fail), detail}. 예외를 삼키지 않고 분류."""
+    print(f"▶ {name}")
+    proc = subprocess.run(cmd, cwd=str(KIT), text=True, capture_output=True)
+    out = (proc.stdout + proc.stderr).strip()
+    tail = out.splitlines()[-1][:200] if out else ""
+    if proc.returncode == 0:
+        print(f"  ✓ {tail}" if tail else "  ✓ ok")
+        return {"name": name, "status": "ok", "detail": tail}
+    status = "skip" if proc.returncode in _SKIP_EXIT_CODES else "fail"
+    icon = "⏭️ SKIP" if status == "skip" else "❌ FAIL"
+    print(f"  {icon}: {tail or ('exit ' + str(proc.returncode))}")
+    return {"name": name, "status": status, "detail": tail or f"exit {proc.returncode}"}
+
+
+def _collect(cfg: dict, args) -> list[dict]:
+    os.environ["OWNTOLOGY_VAULT"] = str(kitconfig.vault_path())
+    src = cfg.get("sources", {})
+    py = sys.executable
+    results: list[dict] = []
+
+    if src.get("kakao"):
+        # 카카오 수집은 본인 닉네임이 필수(없으면 본인 메시지가 "나"로 매핑 안 됨) — 하드 게이트.
+        if not (cfg.get("me", {}).get("kakao_nickname") or "").strip():
+            print("▶ collect/kakao\n  ⏭️ SKIP: 카카오 닉네임 미설정 — kit.py web 에서 입력 후 재실행")
+            results.append({"name": "collect/kakao", "status": "skip",
+                            "detail": "카카오 닉네임(me.kakao_nickname) 미설정"})
+        else:
+            kakao_cmd = [py, str(COLLECTORS / "kakao_export.py"), "--no-sync"]
+            if getattr(args, "fast_kakao", False):
+                kakao_cmd.append("--no-katok-sync")
+            results.append(_run_collector("collect/kakao", kakao_cmd))
+    if src.get("sms"):
+        results.append(_run_collector("collect/sms", [py, str(COLLECTORS / "sms_export.py"),
+                       "--limit", str(cfg.get("sms", {}).get("limit", 500))]))
+    if src.get("mail"):
+        results.append(_run_collector("collect/mail", [py, str(COLLECTORS / "mail_export.py"),
+                       "--limit", str(cfg.get("mail", {}).get("limit", 300)),
+                       "--days", str(cfg.get("mail", {}).get("days", 14))]))
+    if src.get("notes"):
+        results.append(_run_collector("collect/notes", [py, str(COLLECTORS / "notes_export.py")]))
+    if src.get("safari_tabs"):
+        results.append(_run_collector("collect/safari-tabs",
+                       [py, str(COLLECTORS / "safari_tabs_export.py")]))
+    if src.get("github_stars"):
+        results.append(_run_collector("collect/github-stars",
+                       [py, str(COLLECTORS / "github_stars.py")]))
+        if os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY"):
+            results.append(_run_collector("enrich/github-stars",
+                           [py, str(COLLECTORS / "github_stars.py"), "--enrich"]))
+    if not results:
+        print("수집 소스가 모두 꺼져 있습니다 — kit.py web 에서 최소 한 개를 켜세요.")
+    return results
+
+
+def _collect_exit_code(results: list[dict]) -> int:
+    """수집 요약 출력 + 종료코드 결정. 시도한 핵심 수집기가 모두 실패하면 non-zero."""
+    if not results:
+        return 0
+    icon = {"ok": "성공", "skip": "건너뜀", "fail": "실패"}
+    print("\n── 수집 결과 ──")
+    for r in results:
+        print(f"- {r['name'].replace('collect/', '')}: {icon[r['status']]}"
+              + (f" — {r['detail']}" if r["detail"] else ""))
+    n_ok = sum(1 for r in results if r["status"] == "ok")
+    n_skip = sum(1 for r in results if r["status"] == "skip")
+    n_fail = sum(1 for r in results if r["status"] == "fail")
+    print(f"전체 성공: {n_ok} / 실패: {n_fail} / 건너뜀: {n_skip}")
+
+    core = [r for r in results if r["name"].replace("collect/", "").replace("-", "_")
+            in CORE_SOURCES]
+    core_attempted = [r for r in core if r["status"] != "skip"]
+    if core_attempted and not any(r["status"] == "ok" for r in core_attempted):
+        print("⚠️ 시도한 핵심 수집기가 모두 실패했습니다.", file=sys.stderr)
+        return 1
     return 0
 
 
 def cmd_collect(args) -> int:
-    cfg = kitconfig.load()
-    os.environ["OWNTOLOGY_VAULT"] = str(kitconfig.vault_path())
-    src = cfg.get("sources", {})
-    py = sys.executable
-
-    if src.get("kakao"):
-        kakao_cmd = [py, str(COLLECTORS / "kakao_export.py"), "--no-sync"]
-        if getattr(args, "fast_kakao", False):
-            kakao_cmd.append("--no-katok-sync")
-        _step("collect/kakao", kakao_cmd)
-    if src.get("sms"):
-        _step("collect/sms", [py, str(COLLECTORS / "sms_export.py"),
-                              "--limit", str(cfg.get("sms", {}).get("limit", 500))])
-    if src.get("mail"):
-        _step("collect/mail", [py, str(COLLECTORS / "mail_export.py"),
-                               "--limit", str(cfg.get("mail", {}).get("limit", 300)),
-                               "--days", str(cfg.get("mail", {}).get("days", 14))])
-    if src.get("notes"):
-        _step("collect/notes", [py, str(COLLECTORS / "notes_export.py")])
-    if src.get("safari_tabs"):
-        _step("collect/safari-tabs", [py, str(COLLECTORS / "safari_tabs_export.py")])
-    if src.get("github_stars"):
-        _step("collect/github-stars", [py, str(COLLECTORS / "github_stars.py")])
-        if os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY"):
-            _step("enrich/github-stars", [py, str(COLLECTORS / "github_stars.py"), "--enrich"])
-    return 0
+    return _collect_exit_code(_collect(kitconfig.load(), args))
 
 
 def cmd_ontologize(args) -> int:
@@ -169,10 +298,15 @@ def cmd_ontologize(args) -> int:
 
 
 def cmd_run(args) -> int:
-    cmd_collect(args)
+    results = _collect(kitconfig.load(), args)
+    collect_code = _collect_exit_code(results)
     cmd_ontologize(args)
-    print("\n원터치 완료. 수동입력 필드는 python3 kit.py web 에서 채우세요.")
-    return 0
+    if collect_code:
+        print("\n⚠️ 일부/전체 수집 실패 — 위 '수집 결과'를 확인하세요. "
+              "수동입력 필드는 python3 kit.py web 에서 채웁니다.", file=sys.stderr)
+    else:
+        print("\n수집·온톨로지화 처리 완료. 수동입력 필드는 python3 kit.py web 에서 채웁니다.")
+    return collect_code
 
 
 def cmd_web(args) -> int:
@@ -184,6 +318,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="owntology-kit — 수집·온톨로지화 원터치")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("init", help="config 생성 + 볼트 스캐폴드")
+    sub.add_parser("doctor", help="환경·설정·권한 사전 점검")
     c = sub.add_parser("collect", help="활성 소스 수집")
     c.add_argument("--fast-kakao", action="store_true",
                    help="katok sync(DB 복호화, 수 분) 생략, 기존 아카이브에서 export")
@@ -192,8 +327,8 @@ def main() -> int:
     r.add_argument("--fast-kakao", action="store_true")
     sub.add_parser("web", help="설정·수동입력 웹 화면")
     args = ap.parse_args()
-    return {"init": cmd_init, "collect": cmd_collect, "ontologize": cmd_ontologize,
-            "run": cmd_run, "web": cmd_web}[args.cmd](args)
+    return {"init": cmd_init, "doctor": cmd_doctor, "collect": cmd_collect,
+            "ontologize": cmd_ontologize, "run": cmd_run, "web": cmd_web}[args.cmd](args)
 
 
 if __name__ == "__main__":

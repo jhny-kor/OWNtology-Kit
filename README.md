@@ -4,21 +4,30 @@
 수집해서 개인 온톨로지 볼트(마크다운 지식 저장소)로 만들어 주는 킷입니다.
 owntology 개인 볼트 파이프라인을 누구나 쓸 수 있게 설정 분리한 버전입니다.
 
+- 로컬 전용 — 수집 데이터는 기기를 떠나지 않습니다(자세히: [PRIVACY.md](PRIVACY.md))
 - 외부 pip 의존성 **0개** (Python 3.11+ stdlib만)
 - 개인값(닉네임·계정·경로)은 전부 `config.json` — 웹 화면에서 입력
+- **수집 소스 기본값은 전부 꺼짐** — 웹에서 명시적으로 켜야 수집합니다(암묵적 대량 수집 방지)
 - 자동 추출은 전부 `extraction: auto` / `status: proposed` — 확정은 사용자 몫
+
+> ⚠️ **개인정보**: 볼트에는 카카오톡·문자·메일 등 원문이 **평문**으로 저장되며, 대화 상대 등
+> 제3자의 개인정보가 포함됩니다. 개인용으로만 쓰고 공유/공개 폴더에 두지 마세요. [PRIVACY.md](PRIVACY.md) · [SECURITY.md](SECURITY.md)
 
 ## 빠른 시작
 
 ```bash
 python3 kit.py init      # ① config.json 생성 + 볼트 폴더 스캐폴드
-python3 kit.py web       # ② http://127.0.0.1:8765 에서 설정 입력 (닉네임 필수)
-python3 kit.py run       # ③ 수집 + 온톨로지화 원터치
-python3 kit.py web       # ④ 인물 관계·전화·방 이름 등 수동필드 입력
+python3 kit.py web       # ② http://127.0.0.1:8765 에서 설정 입력 (닉네임·수집 소스 켜기)
+python3 kit.py doctor    # ③ 환경·권한·설정 사전 점검 (FAIL 있으면 먼저 해결)
+python3 kit.py run       # ④ 수집 + 온톨로지화 원터치
+python3 kit.py web       # ⑤ 인물 관계·전화·방 이름 등 수동필드 입력
 ```
 
+기본 소스가 전부 꺼져 있으므로 ②에서 켜지 않으면 ④는 아무것도 수집하지 않습니다.
 이후 갱신은 `python3 kit.py run` 만 반복하면 됩니다(멱등).
 카카오 DB 복호화(katok sync)가 오래 걸리면 `--fast-kakao` 로 직전 아카이브에서 export만 합니다.
+카카오 수집은 본인 닉네임이 없으면 건너뜁니다(본인 메시지 "나" 매핑에 필요).
+수집이 끝나면 **성공/실패/건너뜀 요약**이 출력되고, 시도한 핵심 수집기가 모두 실패하면 종료 코드가 0이 아닙니다.
 
 ## 사전 요구사항 (macOS)
 
@@ -99,11 +108,21 @@ launchd로 주기 실행하려면:
 ## 구조
 
 ```
-kit.py               CLI: init | collect | ontologize | run | web
-config.json          사용자 설정 (init이 생성, 웹에서 편집)
+kit.py               CLI: init | doctor | collect | ontologize | run | web
+config.json          사용자 설정 (init이 생성, 웹에서 편집, .gitignore 대상)
 kitlib/              config·vault·security·kakao 공용 모듈
 collectors/          소스별 수집기 6개
 pipeline/            원문→노트 변환 + 엔티티/관계/인덱스/검증 체인
 schemas/             ontology.schema.json / relation.schema.json
 web/                 설정·수동입력 웹 화면 (127.0.0.1 전용)
+PRIVACY.md SECURITY.md LICENSE
 ```
+
+## 알려진 제한 · 로드맵
+
+현재 미구현(기여 환영):
+
+- 소스별 **수집 기간·특정 대화방/계정 선택** (지금은 소스 단위 on/off만)
+- 원문 **선택 삭제·보존기간(retention)** 설정
+- 최초 실행 **동의 마법사**
+- 샘플 데이터 기반 자동 테스트

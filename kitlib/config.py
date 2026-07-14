@@ -19,8 +19,10 @@ DEFAULTS: dict = {
     "vault_path": "~/Documents/my-owntology",
     # 사용자 직접입력 필드 — 비워두면 웹 화면(kit.py web)에서 입력
     "me": {"kakao_nickname": "", "name": "", "entity_slug": ""},
-    "sources": {"kakao": True, "sms": True, "mail": True, "notes": True,
-                "safari_tabs": True, "github_stars": False},
+    # 공개 배포 안전 기본값: 전부 꺼진 상태로 시작 — 사용자가 웹 설정 화면에서
+    # 수집할 소스를 명시적으로 켜야 한다(암묵적 대량 수집 방지).
+    "sources": {"kakao": False, "sms": False, "mail": False, "notes": False,
+                "safari_tabs": False, "github_stars": False},
     # 온톨로지화 선택 단계 on/off (핵심 단계는 항상 실행). 웹 설정 화면에서 편집.
     "pipeline": {"member_stubs": True, "link_nodes": True,
                  "personal_layer": True, "daily_rollup": True},

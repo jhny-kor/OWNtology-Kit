@@ -6,11 +6,11 @@
     "entity_slug": ""
   },
   "sources": {
-    "kakao": true,
-    "sms": true,
-    "mail": true,
-    "notes": true,
-    "safari_tabs": true,
+    "kakao": false,
+    "sms": false,
+    "mail": false,
+    "notes": false,
+    "safari_tabs": false,
     "github_stars": false
   },
   "pipeline": {

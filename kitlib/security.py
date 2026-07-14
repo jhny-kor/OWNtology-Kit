@@ -42,9 +42,9 @@ def owner_active() -> bool:
 # ── 폴더 정책 ────────────────────────────────────────────────
 # get_note / 기본 검색에서 차단되는 민감/원문 폴더 (경로 prefix, '/' 구분)
 BLOCKED_FOLDER_PREFIXES = (
-    "source/email",
-    "source/kakao",
-    "source/sms",
+    # 원문 전체를 직접 조회(get_note)에서도 차단 — 검색과 동일 정책.
+    # (safari-tabs 등 새 원문 하위폴더가 생겨도 자동 포함되도록 상위 prefix로 통합)
+    "source",
     "quarantine",
     "accounts",
     # career는 여기 넣지 않는다 — ChatGPT가 이력서·자소서를 folder=career 명시 호출로

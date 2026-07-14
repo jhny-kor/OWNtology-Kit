@@ -131,7 +131,10 @@ $("#saveConfig").onclick = async () => {
     github: {username: $("#gh_user").value.trim(), user_context: $("#gh_ctx").value.trim()},
   };
   const r = await fetch("/api/config", {method:"POST", body: JSON.stringify(body)});
-  $("#configMsg").textContent = r.ok ? "저장됨 ✓" : "저장 실패";
+  let msg = r.ok ? "저장됨 ✓" : "저장 실패";
+  if (r.ok && sources.kakao && !body.me.kakao_nickname)
+    msg += " — ⚠️ 카카오가 켜졌지만 닉네임이 비어 있어 카카오 수집은 건너뜁니다";
+  $("#configMsg").textContent = msg;
 };
 
 async function loadPeople() {

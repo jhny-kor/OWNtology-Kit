@@ -22,6 +22,7 @@ from kitlib import config as kitconfig
 # PORT 환경변수 우선(프리뷰/autoPort 대응). 미지정 시 8765 고정.
 HOST = os.getenv("HOST", "127.0.0.1")
 PORT = int(os.getenv("PORT", "8765"))
+_LOOPBACK = {"127.0.0.1", "::1", "localhost"}
 INDEX = Path(__file__).with_name("index.html")
 
 
@@ -186,6 +187,13 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> int:
+    # 웹 API는 인증이 없고 볼트를 읽고/쓴다 — 루프백 외 바인딩은 거부(개인정보 노출 방지).
+    # 원격 접근이 꼭 필요하면 SSH 터널/리버스 프록시로 앞단에서 인증을 두고 노출하라.
+    if HOST not in _LOOPBACK:
+        print(f"거부: HOST={HOST!r} 는 루프백이 아닙니다. 이 웹 화면은 인증이 없어 "
+              f"127.0.0.1(localhost)에만 바인딩합니다. 원격 접근은 SSH 터널을 사용하세요.",
+              file=sys.stderr)
+        return 2
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"owntology-kit 웹 화면: http://{HOST}:{PORT}  (종료: Ctrl+C)")
     try:
