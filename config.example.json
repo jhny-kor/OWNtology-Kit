@@ -1,0 +1,41 @@
+{
+  "vault_path": "~/Documents/my-owntology",
+  "me": {
+    "kakao_nickname": "",
+    "name": "",
+    "entity_slug": ""
+  },
+  "sources": {
+    "kakao": true,
+    "sms": true,
+    "mail": true,
+    "notes": true,
+    "safari_tabs": true,
+    "github_stars": false
+  },
+  "pipeline": {
+    "member_stubs": true,
+    "link_nodes": true,
+    "personal_layer": true,
+    "daily_rollup": true
+  },
+  "kakao": {
+    "min_messages": 1,
+    "include_services": false,
+    "self_chat_id": "",
+    "room_names": {},
+    "chat_aliases": {}
+  },
+  "sms": {
+    "limit": 500
+  },
+  "mail": {
+    "days": 14,
+    "limit": 300
+  },
+  "github": {
+    "username": "",
+    "user_context": ""
+  },
+  "entity_slugs": {}
+}

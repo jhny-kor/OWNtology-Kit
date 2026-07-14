@@ -1,0 +1,24 @@
+# 사용자별 설정 (kit.py init이 생성 — 개인 경로/닉네임 포함)
+config.json
+
+# 수집기/파이프라인 상태·캐시
+collectors/.github_stars_state.json
+**/.export_state.json
+**/.*_state.json
+
+# OMC 세션/상태
+.omc/
+.omx/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# macOS / 에디터
+.DS_Store
+*.swp
+
+# 로컬 프리뷰 설정 (개인 포트/경로)
+.claude/

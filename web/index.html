@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>owntology-kit</title>
+<style>
+  :root { --fg:#1a1a1a; --bg:#fff; --muted:#777; --line:#e2e2e2; --accent:#3b6ef5; }
+  @media (prefers-color-scheme: dark) {
+    :root { --fg:#eee; --bg:#161616; --muted:#999; --line:#333; --accent:#7aa2ff; }
+  }
+  body { font-family:-apple-system,"Apple SD Gothic Neo",sans-serif; color:var(--fg);
+         background:var(--bg); max-width:860px; margin:0 auto; padding:24px; }
+  h1 { font-size:1.3rem; } h2 { font-size:1.05rem; margin-top:1.6em; }
+  nav button { padding:8px 16px; border:1px solid var(--line); background:none;
+               color:var(--fg); cursor:pointer; border-radius:6px; margin-right:6px; }
+  nav button.on { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  section { display:none; } section.on { display:block; }
+  label { display:block; margin:10px 0 3px; font-size:.85rem; color:var(--muted); }
+  input[type=text], input[type=number], textarea {
+    width:100%; box-sizing:border-box; padding:7px 9px; border:1px solid var(--line);
+    border-radius:6px; background:var(--bg); color:var(--fg); font-size:.95rem; }
+  textarea { min-height:70px; }
+  table { border-collapse:collapse; width:100%; margin-top:12px; font-size:.9rem; }
+  th, td { border-bottom:1px solid var(--line); padding:6px 8px; text-align:left; }
+  td input { width:100%; box-sizing:border-box; padding:4px 6px; border:1px solid var(--line);
+             border-radius:4px; background:var(--bg); color:var(--fg); }
+  .save { margin-top:16px; padding:9px 22px; background:var(--accent); color:#fff;
+          border:none; border-radius:6px; cursor:pointer; font-size:.95rem; }
+  .msg { margin-left:12px; color:var(--muted); font-size:.85rem; }
+  .empty { color:var(--muted); font-style:italic; }
+  .chk { margin-right:14px; white-space:nowrap; }
+  .hint { color:var(--muted); font-size:.8rem; margin-top:2px; }
+</style>
+</head>
+<body>
+<h1>owntology-kit 설정</h1>
+<nav>
+  <button data-tab="config" class="on">설정</button>
+  <button data-tab="people">사람</button>
+  <button data-tab="rooms">채팅방</button>
+</nav>
+
+<section id="config" class="on">
+  <h2>내 정보</h2>
+  <label>카카오톡 프로필 닉네임 (필수 — 본인 메시지를 "나"로 인식)</label>
+  <input type="text" id="me_nick">
+  <label>이름</label>
+  <input type="text" id="me_name">
+  <h2>볼트</h2>
+  <label>볼트 경로</label>
+  <input type="text" id="vault_path">
+  <h2>수집 소스 <span class="hint" style="font-weight:normal">(체크 해제 시 수집 안 함)</span></h2>
+  <div id="srcs"></div>
+  <h2>온톨로지화 단계 <span class="hint" style="font-weight:normal">(선택 단계 — 해제해도 핵심 정제·검증은 항상 실행)</span></h2>
+  <div id="stages"></div>
+  <h2>카카오톡</h2>
+  <label>방 최소 메시지 수 (이보다 적은 방은 건너뜀)</label>
+  <input type="number" id="kakao_min">
+  <label>나와의 채팅 chat_id (선택 — katok 아카이브의 chat-&lt;숫자&gt; ID)</label>
+  <input type="text" id="kakao_self">
+  <h2>GitHub 스타 (선택)</h2>
+  <label>GitHub 사용자명</label>
+  <input type="text" id="gh_user">
+  <label>LLM 요약용 자기소개 (프로젝트·관심사 — --enrich 시 사용)</label>
+  <textarea id="gh_ctx"></textarea>
+  <p class="hint">API 키는 여기 입력하지 않습니다 — 환경변수(ANTHROPIC_API_KEY 등)로 설정하세요.</p>
+  <button class="save" id="saveConfig">설정 저장</button><span class="msg" id="configMsg"></span>
+</section>
+
+<section id="people">
+  <p class="hint">자동 수집된 인물 노트의 빈 필드를 채웁니다. 입력하지 않은 필드는 빈 값으로 유지됩니다.
+     빈 필드가 있는 사람이 먼저 표시됩니다.</p>
+  <table id="peopleTable">
+    <thead><tr><th>이름</th><th>관계</th><th>전화</th><th>별칭(쉼표구분)</th><th></th></tr></thead>
+    <tbody></tbody>
+  </table>
+</section>
+
+<section id="rooms">
+  <p class="hint">자동 생성된 카카오 방 이름을 바꿉니다. 저장 후 다음 수집(kit.py run)에서
+     노트가 새 이름으로 정리됩니다. 비우면 자동 이름으로 되돌아갑니다.</p>
+  <table id="roomsTable">
+    <thead><tr><th>chat_id</th><th>현재 이름</th><th>바꿀 이름</th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <button class="save" id="saveRooms">방 이름 저장</button><span class="msg" id="roomsMsg"></span>
+</section>
+
+<script>
+const $ = s => document.querySelector(s);
+const SRC_LABEL = {kakao:"카카오톡", sms:"SMS/iMessage", mail:"메일", notes:"메모(Apple Notes)",
+                   safari_tabs:"Safari 탭", github_stars:"GitHub 스타"};
+const STAGE_LABEL = {member_stubs:"인물 스텁 생성(1:1 카톡 상대)", link_nodes:"링크 노드(카카오+Safari, 웹요약)",
+                     personal_layer:"개인계층 후보(결정·사건·선호)", daily_rollup:"일일 롤업"};
+let cfg = {};
+
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("nav button, section").forEach(e => e.classList.remove("on"));
+  b.classList.add("on"); $("#" + b.dataset.tab).classList.add("on");
+});
+
+async function loadConfig() {
+  cfg = await (await fetch("/api/config")).json();
+  $("#me_nick").value = cfg.me.kakao_nickname || "";
+  $("#me_name").value = cfg.me.name || "";
+  $("#vault_path").value = cfg.vault_path || "";
+  $("#kakao_min").value = cfg.kakao.min_messages ?? 1;
+  $("#kakao_self").value = cfg.kakao.self_chat_id || "";
+  $("#gh_user").value = cfg.github.username || "";
+  $("#gh_ctx").value = cfg.github.user_context || "";
+  $("#srcs").innerHTML = Object.keys(SRC_LABEL).map(k =>
+    `<label class="chk" style="display:inline"><input type="checkbox" data-src="${k}"
+      ${cfg.sources[k] ? "checked" : ""}> ${SRC_LABEL[k]}</label>`).join("");
+  const stages = cfg.pipeline || {};
+  $("#stages").innerHTML = Object.keys(STAGE_LABEL).map(k =>
+    `<label class="chk" style="display:inline"><input type="checkbox" data-stage="${k}"
+      ${stages[k] !== false ? "checked" : ""}> ${STAGE_LABEL[k]}</label>`).join("");
+}
+
+$("#saveConfig").onclick = async () => {
+  const sources = {};
+  document.querySelectorAll("[data-src]").forEach(c => sources[c.dataset.src] = c.checked);
+  const pipeline = {};
+  document.querySelectorAll("[data-stage]").forEach(c => pipeline[c.dataset.stage] = c.checked);
+  const body = {
+    vault_path: $("#vault_path").value.trim(),
+    me: {kakao_nickname: $("#me_nick").value.trim(), name: $("#me_name").value.trim()},
+    sources, pipeline,
+    kakao: {min_messages: +$("#kakao_min").value || 1, self_chat_id: $("#kakao_self").value.trim()},
+    github: {username: $("#gh_user").value.trim(), user_context: $("#gh_ctx").value.trim()},
+  };
+  const r = await fetch("/api/config", {method:"POST", body: JSON.stringify(body)});
+  $("#configMsg").textContent = r.ok ? "저장됨 ✓" : "저장 실패";
+};
+
+async function loadPeople() {
+  const people = await (await fetch("/api/people")).json();
+  const tb = $("#peopleTable tbody");
+  tb.innerHTML = people.length ? "" : `<tr><td colspan="5" class="empty">인물 노트 없음 — 먼저 kit.py run 을 실행하세요</td></tr>`;
+  for (const p of people) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${p.name}<div class="hint">${p.entity_id}</div></td>
+      <td><input value="${p.relationship || ""}" data-f="relationship"></td>
+      <td><input value="${p.phone || ""}" data-f="phone"></td>
+      <td><input value="${(p.aliases || []).join(", ")}" data-f="aliases"></td>
+      <td><button>저장</button></td>`;
+    tr.querySelector("button").onclick = async () => {
+      const get = f => tr.querySelector(`[data-f=${f}]`).value.trim();
+      const r = await fetch("/api/people", {method:"POST", body: JSON.stringify({
+        path: p.path, relationship: get("relationship"), phone: get("phone"),
+        aliases: get("aliases").split(",").map(s => s.trim()).filter(Boolean),
+      })});
+      tr.querySelector("button").textContent = r.ok ? "저장됨 ✓" : "실패";
+    };
+    tb.appendChild(tr);
+  }
+}
+
+async function loadRooms() {
+  const rooms = await (await fetch("/api/rooms")).json();
+  const tb = $("#roomsTable tbody");
+  tb.innerHTML = rooms.length ? "" : `<tr><td colspan="3" class="empty">방 목록 없음 — 먼저 카카오 수집을 실행하세요</td></tr>`;
+  for (const r of rooms) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td class="hint">${r.chat_id}</td><td>${r.name}</td>
+      <td><input value="${r.override || ""}" data-cid="${r.chat_id}"></td>`;
+    tb.appendChild(tr);
+  }
+}
+
+$("#saveRooms").onclick = async () => {
+  const room_names = {};
+  document.querySelectorAll("[data-cid]").forEach(i => room_names[i.dataset.cid] = i.value.trim());
+  const r = await fetch("/api/rooms", {method:"POST", body: JSON.stringify({room_names})});
+  $("#roomsMsg").textContent = r.ok ? "저장됨 ✓ — 다음 kit.py run 에서 반영" : "저장 실패";
+};
+
+loadConfig(); loadPeople(); loadRooms();
+</script>
+</body>
+</html>

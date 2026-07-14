@@ -1,0 +1,37 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://owntology.local/schemas/relation.schema.json",
+  "title": "owntology relation record",
+  "description": "구조화된 관계 1건. frontmatter `relations:` 리스트의 각 항목이 이 스키마를 따른다(위원회 재평가 P1). 본문 자연어가 아니라 이 레코드로 관계를 표현한다.",
+  "type": "object",
+  "required": ["subject", "predicate", "object", "status"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "관계 고유 id. 형식 'relation:<subject-slug>-<predicate>-<object-slug>'.",
+      "pattern": "^relation:[a-z0-9가-힣._-]+$"
+    },
+    "subject": { "type": "string", "description": "주체 entity_id (예: person:kim-jihyeon)" },
+    "predicate": {
+      "type": "string",
+      "description": "관계 술어(방향 있음). 예: employed_by, father_of, mother_of, younger_sister_of, spouse_of, member_of, works_on, depends_on",
+      "pattern": "^[a-z_]+$"
+    },
+    "object": { "type": "string", "description": "대상 entity_id (예: organization:ssis)" },
+    "valid_from": { "type": ["string", "null"], "format": "date" },
+    "valid_to": { "type": ["string", "null"], "format": "date", "description": "현재 유효하면 null" },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "status": {
+      "type": "string",
+      "enum": ["confirmed", "inferred", "proposed", "active", "completed", "cancelled", "historical", "superseded", "invalidated"],
+      "description": "confirmed=사용자확인, inferred=자동추론, proposed=제안, historical/superseded/invalidated=과거·대체·무효"
+    },
+    "sources": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "근거. 예: source:user-confirmation, people/fam.md, conversations/..."
+    },
+    "verified_at": { "type": ["string", "null"], "format": "date" }
+  },
+  "$comment": "예: { id: relation:kim-jihyeon-employed_by-ssis, subject: person:kim-jihyeon, predicate: employed_by, object: organization:ssis, valid_from: null, valid_to: null, confidence: 1.0, status: confirmed, sources: [source:user-confirmation] }"
+}
