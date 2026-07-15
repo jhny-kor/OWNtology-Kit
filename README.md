@@ -942,6 +942,1364 @@ doctor 결과:
 
 </details>
 
+## 🔌 MCP 서버·ChatGPT·Claude·Gemini 연동 기능 추가하기
+
+현재 OWNtology-Kit은 macOS에서 개인 데이터를 수집하고 마크다운 볼트를 만드는 기능까지 제공합니다.
+
+아래 프롬프트는 OWNtology-Kit에 다음 기능을 추가하기 위한 개발 프롬프트입니다.
+
+* 사용자 Mac에서 실행되는 로컬 MCP 서버
+* OCI 또는 AWS에서 실행되는 원격 MCP 서버
+* Cloudflare Tunnel 또는 Cloudflare Workers 기반 원격 MCP
+* ChatGPT, Claude Code, Claude Desktop, Gemini CLI 연결
+* LLM을 통한 개인 온톨로지 검색과 문서 조회
+* LLM에서 입력한 메모·사실·일정·관계 정보를 OWNtology에 안전하게 반영
+* 로컬 볼트와 원격 MCP 간 선택적 동기화
+* 인증·승인·감사로그·개인정보 보호
+
+<details>
+<summary><strong>MCP 연동 기능 개발 프롬프트 펼쳐 보기</strong></summary>
+
+<br>
+
+아래 내용을 전체 복사해 OWNtology-Kit 저장소를 연 Codex 또는 Claude Code에 입력하세요.
+
+---
+
+당신은 OWNtology-Kit에 안전한 Model Context Protocol 서버와 원격 동기화 기능을 추가하는 시니어 Python·MCP·클라우드 엔지니어입니다.
+
+대상 저장소:
+
+```text
+https://github.com/jhny-kor/OWNtology-Kit
+```
+
+## 1. 작업 목표
+
+현재 저장소의 개인 데이터 수집·온톨로지화 기능을 유지하면서 다음 기능을 추가하세요.
+
+1. 사용자 Mac에서 직접 실행하는 로컬 MCP 서버
+2. OCI 또는 AWS에 배포할 수 있는 원격 MCP 서버
+3. Cloudflare Tunnel을 통한 Mac MCP 공개 방식
+4. Cloudflare Workers 기반 원격 MCP 서버
+5. ChatGPT, Claude Code, Claude Desktop, Gemini CLI 연결 문서
+6. 개인 온톨로지 검색 및 문서 조회 도구
+7. LLM이 입력한 내용을 온톨로지에 안전하게 저장하는 도구
+8. 로컬 볼트와 원격 MCP 사이의 선택적 양방향 동기화
+9. 인증, 권한, 사용자 승인, 감사로그, 개인정보 보호
+10. 테스트, 배포 파일, README 사용 설명
+
+기존 수집기와 파이프라인을 전면 재작성하지 말고, MCP 기능이 기존 볼트 구조를 이용하도록 구현하세요.
+
+---
+
+## 2. 먼저 현재 저장소 분석
+
+코드를 수정하기 전에 다음을 분석하세요.
+
+* `kit.py` 명령 구조
+* `kitlib/config.py` 또는 실제 설정 모듈
+* `config.json` 구조
+* 볼트 디렉터리 구조
+* `source/`
+* `conversations/`
+* `people/`
+* `organizations/`
+* `projects/`
+* `knowledge/`
+* `decisions/`
+* `events/`
+* `preferences/`
+* `daily/`
+* `indexes/`
+* `ontology/`
+* `quarantine/`
+* 웹 설정 서버 구조
+* 개인정보 관련 `PRIVACY.md`
+* 보안 관련 `SECURITY.md`
+* 기존 테스트
+
+분석 후 다음 내용을 먼저 보고하세요.
+
+```text
+현재 구조 분석
+
+볼트 경로 결정 방식:
+...
+
+설정 파일:
+...
+
+검색 가능한 주요 폴더:
+...
+
+자동 생성 파일:
+...
+
+사용자 수동 입력 파일:
+...
+
+기존 웹 서버:
+...
+
+MCP 기능 추가 시 재사용할 모듈:
+...
+
+새로 분리해야 할 공통 서비스:
+...
+```
+
+그다음 안전한 작업 브랜치를 만드세요.
+
+```bash
+git switch -c feature/mcp-remote-access
+```
+
+사용자의 기존 변경사항이 있으면 임의로 reset, stash, checkout 또는 삭제하지 마세요.
+
+원격 저장소로 push하거나 Pull Request를 생성하는 것은 사용자가 명시적으로 요청한 경우에만 수행하세요.
+
+---
+
+## 3. 필수 아키텍처
+
+MCP 기능은 다음 네 계층으로 분리하세요.
+
+```text
+┌─────────────────────────────────────────────┐
+│ ChatGPT · Claude · Gemini                   │
+└──────────────────────┬──────────────────────┘
+                       │ MCP
+┌──────────────────────▼──────────────────────┐
+│ MCP 인터페이스                             │
+│ stdio / Streamable HTTP / 인증 / 도구 정의 │
+└──────────────────────┬──────────────────────┘
+                       │
+┌──────────────────────▼──────────────────────┐
+│ OWNtology 서비스 계층                      │
+│ 검색 · 조회 · 입력 제안 · 승인 · 감사로그 │
+└──────────────────────┬──────────────────────┘
+                       │
+┌──────────────────────▼──────────────────────┐
+│ 로컬 볼트 또는 원격 저장소                 │
+│ Markdown · SQLite index · D1/R2 등          │
+└─────────────────────────────────────────────┘
+```
+
+MCP 도구가 마크다운 파일을 직접 임의 수정하게 만들지 마세요.
+
+검색, 문서 조회, 입력 제안, 승인 대기, 실제 반영을 담당하는 공통 서비스 계층을 먼저 만든 뒤 로컬 MCP와 원격 MCP가 이를 함께 사용하도록 구현하세요.
+
+---
+
+## 4. 중요한 배포 원칙
+
+macOS 카카오톡, Messages, Mail, Notes, Safari 데이터는 OCI·AWS·Cloudflare 서버에서 직접 수집할 수 없습니다.
+
+따라서 다음 구조를 유지하세요.
+
+```text
+사용자 Mac
+├─ 카카오톡·문자·메일·메모·Safari 수집
+├─ 로컬 OWNtology 볼트
+├─ 로컬 MCP
+└─ 선택적 원격 동기화 클라이언트
+             │
+             │ HTTPS
+             ▼
+원격 MCP
+├─ 승인된 문서 복제본
+├─ 검색 인덱스
+├─ LLM 입력 대기열
+└─ 감사로그
+```
+
+원격 서버에 배포했다고 해서 macOS 수집기를 클라우드에서 실행하려고 하지 마세요.
+
+클라우드 MCP는 다음 중 하나로 동작해야 합니다.
+
+1. Mac의 로컬 MCP를 Cloudflare Tunnel 등으로 안전하게 중계
+2. Mac이 승인된 문서를 원격 저장소로 동기화
+3. 원격에서는 동기화된 문서만 검색
+4. 원격 LLM 입력은 대기열에 저장한 후 Mac으로 다시 가져오기
+
+---
+
+## 5. 로컬 MCP 서버 구현
+
+다음 명령을 추가하세요.
+
+```bash
+python3 kit.py mcp serve --transport stdio
+python3 kit.py mcp serve --transport http
+python3 kit.py mcp status
+python3 kit.py mcp reindex
+python3 kit.py mcp pending
+python3 kit.py mcp approve <proposal-id>
+python3 kit.py mcp reject <proposal-id>
+```
+
+### stdio 모드
+
+* Claude Code, Claude Desktop, Gemini CLI 로컬 연결용
+* 네트워크 포트를 열지 않음
+* 현재 사용자의 볼트만 접근
+* 표준 출력에는 MCP 프로토콜 메시지만 기록
+* 일반 로그는 표준 오류 또는 별도 로그 파일에 기록
+* 서버 실행 위치와 무관하게 설정된 볼트 경로를 사용
+
+### HTTP 모드
+
+기본값:
+
+```text
+http://127.0.0.1:8766/mcp
+```
+
+조건:
+
+* 기본 호스트는 반드시 `127.0.0.1`
+* 기본적으로 외부 인터페이스 바인딩 금지
+* `0.0.0.0` 사용 시 명시적인 설정과 경고 필요
+* Streamable HTTP 방식 우선
+* 구식 SSE 전용 구현에 의존하지 않음
+* Health check 제공
+
+예시:
+
+```text
+GET /health
+POST /mcp
+```
+
+Health check에는 개인정보나 볼트 경로 전체를 노출하지 마세요.
+
+---
+
+## 6. MCP 검색·조회 도구
+
+공식 MCP SDK의 현재 안정 버전을 확인한 후 구현하세요.
+
+직접 비표준 MCP 프로토콜을 만들지 마세요.
+
+최소한 다음 읽기 도구를 구현하세요.
+
+### `search`
+
+개인 온톨로지 전체에서 관련 문서를 검색합니다.
+
+입력 예시:
+
+```json
+{
+  "query": "지난달 여자친구와 여행에 대해 이야기한 내용",
+  "categories": ["conversations", "events", "preferences"],
+  "limit": 10
+}
+```
+
+검색 기본 포함 대상:
+
+* `conversations/`
+* `people/`
+* `organizations/`
+* `projects/`
+* `knowledge/`
+* `decisions/`
+* `events/`
+* `preferences/`
+* `daily/`
+
+검색 기본 제외 대상:
+
+* `source/`
+* `quarantine/`
+* `archive/`
+* `policies/`
+* `schemas/`
+* 숨김 파일
+* 설정 파일
+* 인증 정보
+* 감사로그
+
+`source/` 원문 검색은 별도 설정을 명시적으로 켠 경우에만 허용하세요.
+
+### `fetch`
+
+`search` 결과의 안전한 문서 ID를 받아 문서를 조회합니다.
+
+입력값으로 실제 파일 시스템 경로를 받지 마세요.
+
+```json
+{
+  "id": "event_01J..."
+}
+```
+
+서버 내부에서 안전한 ID를 볼트 파일에 매핑하세요.
+
+`../`, 절대 경로, 심볼릭 링크 우회 등 경로 탐색 공격을 차단하세요.
+
+### 추가 읽기 도구
+
+다음을 구현하세요.
+
+```text
+get_person
+list_people
+get_relationships
+list_recent
+get_timeline
+get_daily_summary
+get_decisions
+get_preferences
+get_projects
+get_vault_stats
+```
+
+모든 도구를 한 번에 모델에 노출하면 도구 선택 성능이 저하될 수 있으므로, 역할이 겹치는 도구는 통합하거나 적절히 분류하세요.
+
+ChatGPT 데이터 검색 호환성을 위해 공식 문서에서 요구하는 최신 `search`와 `fetch` 반환 스키마를 확인해 맞추세요.
+
+---
+
+## 7. 검색 인덱스
+
+개인 볼트 전체를 MCP 호출마다 다시 순회하지 마세요.
+
+다음과 같은 로컬 인덱스를 구현하세요.
+
+```text
+<볼트>/indexes/mcp-index.sqlite3
+```
+
+최소 저장 정보:
+
+* 안전한 문서 ID
+* 제목
+* 문서 종류
+* 상대 경로
+* 본문 검색용 텍스트
+* 태그
+* 관련 인물
+* 생성 시각
+* 수정 시각
+* 콘텐츠 해시
+* 동기화 상태
+
+요구사항:
+
+* 증분 인덱싱
+* 삭제된 파일 반영
+* 변경된 파일만 다시 처리
+* UTF-8 및 한글 검색
+* SQLite FTS 사용 가능 여부 확인
+* FTS를 사용할 수 없는 환경의 대체 검색
+* 검색 결과 점수 제공
+* 결과 본문 길이 제한
+* 개인정보 로그 출력 금지
+
+기존 `indexes/` 파일을 재사용할 수 있으면 재사용하되, MCP 전용 인덱스가 필요하면 별도로 분리하세요.
+
+---
+
+## 8. LLM 입력·쓰기 도구
+
+MCP를 통해 LLM이 임의의 볼트 파일을 직접 수정하게 만들지 마세요.
+
+쓰기 기능 기본값은 꺼짐으로 설정하세요.
+
+```json
+{
+  "mcp": {
+    "enabled": false,
+    "write_enabled": false,
+    "write_mode": "propose"
+  }
+}
+```
+
+### 안전한 직접 입력 도구
+
+다음과 같은 append-only 입력은 활성화된 경우 허용할 수 있습니다.
+
+```text
+capture_note
+capture_inbox
+```
+
+예:
+
+```json
+{
+  "title": "이번 주에 확인할 내용",
+  "content": "AWS MCP 서버의 비용을 확인하고 OCI와 비교한다.",
+  "tags": ["mcp", "aws", "할일"],
+  "client": "chatgpt"
+}
+```
+
+저장 위치 예시:
+
+```text
+inbox/llm/YYYY/MM/<uuid>.md
+```
+
+메타데이터 예시:
+
+```yaml
+---
+id: llm-input-<uuid>
+created_at: 2026-07-15T15:00:00+09:00
+source: mcp
+source_client: chatgpt
+status: proposed
+write_type: capture_note
+request_id: <uuid>
+---
+```
+
+### 승인 대기형 도구
+
+다음 정보는 즉시 정본에 반영하지 말고 승인 제안으로 저장하세요.
+
+```text
+propose_person_update
+propose_relationship
+propose_event
+propose_decision
+propose_preference
+propose_project_update
+propose_fact
+```
+
+저장 위치:
+
+```text
+inbox/mcp-proposals/
+```
+
+제안에는 다음을 포함하세요.
+
+* proposal ID
+* 요청 클라이언트
+* 제안 유형
+* 대상 엔티티 ID
+* 변경 전 값
+* 제안 값
+* 생성 시각
+* 상태
+* 사용자 확인 필요 여부
+* idempotency key
+
+### 금지할 MCP 쓰기 도구
+
+기본 구현에서는 다음 도구를 MCP에 노출하지 마세요.
+
+* 임의 파일 경로 쓰기
+* 파일 삭제
+* 볼트 전체 삭제
+* 원문 삭제
+* `config.json` 수정
+* API 키 변경
+* 수집 소스 자동 활성화
+* 외부 공유 활성화
+* Git commit 또는 push
+* 셸 명령 실행
+
+승인된 제안만 다음 명령으로 반영하세요.
+
+```bash
+python3 kit.py mcp approve <proposal-id>
+```
+
+또는 기존 웹 설정 화면에 다음 메뉴를 추가하세요.
+
+```text
+MCP 입력 승인 대기
+├─ 제안 내용
+├─ 변경 전 값
+├─ 변경 후 값
+├─ 요청 클라이언트
+├─ 승인
+└─ 거절
+```
+
+MCP 클라이언트가 스스로 자신의 제안을 승인할 수 없도록 하세요.
+
+---
+
+## 9. 감사로그
+
+모든 MCP 호출에 대한 감사로그를 남기세요.
+
+저장 위치 예시:
+
+```text
+<볼트>/policies/audit/mcp-audit.jsonl
+```
+
+기록 항목:
+
+* timestamp
+* request_id
+* client_id
+* tool_name
+* read 또는 write
+* success 또는 failure
+* 반환 문서 개수
+* 제안 ID
+* 승인 상태
+* 처리 시간
+
+기록 금지 항목:
+
+* 전체 메시지 본문
+* 전체 메일 본문
+* API 키
+* Bearer Token
+* OAuth access token
+* 사용자 질문 전체 원문
+* 불필요한 개인정보
+
+감사로그 보존기간과 삭제 명령도 제공하세요.
+
+---
+
+## 10. 설정 구조
+
+기존 `config.json`에 다음과 같은 구조를 안전하게 추가하세요.
+
+```json
+{
+  "mcp": {
+    "enabled": false,
+    "transport": "stdio",
+    "host": "127.0.0.1",
+    "port": 8766,
+    "write_enabled": false,
+    "write_mode": "propose",
+    "include_raw_source": false,
+    "max_results": 20,
+    "max_document_chars": 30000,
+    "audit_enabled": true
+  },
+  "remote_sync": {
+    "enabled": false,
+    "provider": null,
+    "endpoint": null,
+    "mode": "derived_only",
+    "push_enabled": false,
+    "pull_enabled": false
+  }
+}
+```
+
+민감정보는 `config.json`에 저장하지 마세요.
+
+다음 값은 환경변수 또는 안전한 비밀 저장소를 사용하세요.
+
+```text
+OWNTOLOGY_MCP_TOKEN
+OWNTOLOGY_MCP_CLIENT_ID
+OWNTOLOGY_MCP_CLIENT_SECRET
+OWNTOLOGY_SYNC_TOKEN
+OWNTOLOGY_OAUTH_ISSUER
+OWNTOLOGY_PUBLIC_BASE_URL
+```
+
+로컬 비밀 파일이 필요한 경우:
+
+```text
+~/.config/owntology-kit/mcp.env
+```
+
+권한:
+
+```bash
+chmod 600 ~/.config/owntology-kit/mcp.env
+```
+
+해당 파일과 모든 인증 파일을 `.gitignore`에 추가하세요.
+
+---
+
+## 11. 원격 동기화
+
+다음 명령을 추가하세요.
+
+```bash
+python3 kit.py sync status
+python3 kit.py sync plan
+python3 kit.py sync push
+python3 kit.py sync pull
+```
+
+### 기본 동기화 모드
+
+기본값은 다음으로 설정하세요.
+
+```text
+derived_only
+```
+
+동기화 허용 기본 대상:
+
+* 승인된 `people/`
+* 승인된 `organizations/`
+* 승인된 `projects/`
+* `knowledge/`
+* `decisions/`
+* `events/`
+* `preferences/`
+* `daily/`
+* 필요한 검색 인덱스
+
+기본 제외 대상:
+
+* `source/`
+* `quarantine/`
+* 전체 카카오톡 원문
+* 전체 문자 원문
+* 전체 메일 원문
+* Apple 메모 원문
+* Safari 전체 URL
+* 설정 파일
+* 인증 정보
+* 감사로그
+
+원문 동기화는 별도의 강한 경고와 사용자의 명시적 설정 없이는 허용하지 마세요.
+
+### 양방향 입력
+
+원격 MCP에서 생성된 LLM 입력은 원격 대기열에 저장하세요.
+
+Mac의 `sync pull` 실행 시 다음 위치로 내려받으세요.
+
+```text
+inbox/remote/
+```
+
+동기화된 입력은 바로 정본에 합치지 말고 승인 또는 파이프라인 처리를 거치도록 하세요.
+
+### 충돌 처리
+
+다음을 구현하세요.
+
+* UUID 기반 문서 ID
+* 콘텐츠 해시
+* idempotency key
+* 중복 요청 무시
+* append-only 원격 입력
+* 충돌 발생 시 기존 파일 덮어쓰기 금지
+* `quarantine/sync-conflicts/`에 충돌 저장
+* dry-run 기능
+* 마지막 동기화 체크포인트
+
+---
+
+## 12. OCI 배포
+
+다음 파일을 추가하세요.
+
+```text
+deploy/oci/
+├─ README.md
+├─ docker-compose.yml
+├─ .env.example
+├─ Caddyfile.example
+└─ systemd/
+   └─ owntology-mcp.service
+```
+
+OCI에서는 다음 두 가지 방식을 설명하세요.
+
+### 개인용 권장 방식
+
+```text
+OCI Compute VM
++ Docker Compose
++ 영구 Block Volume
++ HTTPS reverse proxy
++ OAuth 또는 강한 인증
+```
+
+### 구현 조건
+
+* MCP 서버를 컨테이너로 실행
+* 데이터 디렉터리를 영구 볼륨에 저장
+* 컨테이너 이미지에 개인 볼트를 포함하지 않음
+* HTTPS 필수
+* 80 포트는 HTTPS 리디렉션에만 사용
+* MCP 포트를 인터넷에 직접 노출하지 않음
+* 방화벽 최소 허용
+* SSH 비밀번호 인증 비활성화 권장
+* 로그에 개인정보를 남기지 않음
+* 백업과 복원 절차 문서화
+* 인스턴스 재시작 후 자동 실행
+* 인증 토큰을 이미지나 Git에 포함하지 않음
+
+실제 OCI 리소스 생성이나 과금 발생 작업은 사용자 승인 없이 실행하지 마세요.
+
+---
+
+## 13. AWS 배포
+
+다음 파일을 추가하세요.
+
+```text
+deploy/aws/
+├─ README.md
+├─ docker-compose.yml
+├─ .env.example
+├─ Caddyfile.example
+└─ terraform/
+   └─ README.md
+```
+
+다음 두 방식을 문서화하세요.
+
+### 개인용 단순 구성
+
+```text
+EC2
++ Docker Compose
++ EBS
++ HTTPS reverse proxy
+```
+
+### 관리형 구성
+
+```text
+ECS 또는 유사 컨테이너 서비스
++ 영구 저장소
++ HTTPS Load Balancer
++ Secrets 관리
+```
+
+요구사항:
+
+* 임시 컨테이너 파일시스템을 볼트 영구 저장소로 사용하지 않음
+* 보안 그룹 최소 허용
+* 관리 포트와 MCP 포트 분리
+* HTTPS 필수
+* 인증정보는 Secrets Manager 또는 동등한 안전한 방식 사용
+* IAM 권한 최소화
+* 비용이 발생하기 전에 사용자 확인
+* 삭제 절차와 비용 중단 절차 문서화
+
+특정 서비스를 선택할 때는 최신 AWS 공식 문서와 현재 과금 구조를 확인하세요.
+
+---
+
+## 14. Cloudflare 방식
+
+두 가지 방식을 분리해서 구현 또는 문서화하세요.
+
+### 방식 A: Cloudflare Tunnel
+
+구조:
+
+```text
+ChatGPT·Claude·Gemini
+          │
+          ▼
+Cloudflare Access 또는 OAuth
+          │
+          ▼
+Cloudflare Tunnel
+          │
+          ▼
+사용자 Mac의 127.0.0.1 MCP 서버
+```
+
+특징:
+
+* 볼트가 Mac에 계속 존재
+* 별도 클라우드 볼트 복제 불필요
+* Mac이 켜져 있어야 함
+* 잠자기 상태에서는 사용할 수 없을 수 있음
+* Tunnel만 열고 인증 없는 공개 URL을 만들지 않음
+* Cloudflare Access 또는 OAuth 적용
+* `/mcp` 이외 관리 경로는 외부 노출 금지
+
+다음 파일을 추가하세요.
+
+```text
+deploy/cloudflare-tunnel/
+├─ README.md
+├─ config.yml.example
+└─ access-policy.md
+```
+
+### 방식 B: Cloudflare Workers 원격 MCP
+
+Cloudflare Workers에는 사용자 Mac의 마크다운 파일시스템이 존재하지 않으므로 별도 저장소 어댑터를 구현하세요.
+
+권장 역할 분리:
+
+```text
+Workers
+├─ MCP HTTP endpoint
+├─ 인증
+├─ 도구 라우팅
+└─ 입력 검증
+
+D1
+├─ 문서 메타데이터
+├─ 검색 인덱스
+├─ 제안 대기열
+└─ 감사 이벤트
+
+R2
+├─ 승인된 문서 본문
+└─ 대용량 콘텐츠
+
+Durable Objects
+└─ 필요한 경우 세션 상태
+```
+
+다음 파일을 추가하세요.
+
+```text
+deploy/cloudflare-worker/
+├─ README.md
+├─ package.json
+├─ wrangler.jsonc
+├─ src/
+└─ migrations/
+```
+
+Python 로컬 MCP 서버를 그대로 Workers에 올리려고 하지 말고, 공통 MCP 도구 계약과 저장소 인터페이스를 공유하는 별도 어댑터로 구현하세요.
+
+OAuth 또는 Cloudflare Access를 적용하고, 사용자별 데이터 분리가 필요한 경우 모든 데이터에 `owner_id`를 포함하세요.
+
+---
+
+## 15. 인증과 권한
+
+### 로컬 stdio
+
+* 운영체제 사용자 권한을 신뢰 경계로 사용
+* 별도 네트워크 인증 불필요
+* 다른 사용자 계정에서 볼트 접근 차단
+
+### 로컬 HTTP
+
+* loopback 전용
+* 필요하면 임의 생성된 Bearer Token 적용
+* 토큰을 로그에 출력하지 않음
+* 토큰 회전 명령 제공
+
+```bash
+python3 kit.py mcp token rotate
+```
+
+### 원격 HTTP
+
+다음 중 하나를 사용하세요.
+
+* 표준 OAuth
+* Cloudflare Access
+* 검증된 외부 IdP
+* 개인 테스트에 한정한 강한 Bearer Token
+
+ChatGPT 연결에 필요한 최신 인증 요구사항을 공식 OpenAI 문서에서 확인하세요.
+
+Claude와 Gemini 연결에 고정 헤더를 사용하는 경우 토큰을 프로젝트 파일에 직접 저장하지 마세요.
+
+권한 범위를 다음처럼 분리하세요.
+
+```text
+owntology.read
+owntology.search
+owntology.write.propose
+owntology.write.capture
+owntology.admin
+```
+
+기본 권한은 읽기 전용으로 설정하세요.
+
+---
+
+## 16. 클라이언트 연결 문서
+
+다음 문서를 추가하세요.
+
+```text
+docs/MCP.md
+docs/MCP_LOCAL.md
+docs/MCP_CLOUD.md
+docs/MCP_CLIENTS.md
+docs/MCP_SECURITY.md
+```
+
+### ChatGPT
+
+다음을 설명하세요.
+
+* ChatGPT에서는 인터넷에서 접근 가능한 HTTPS MCP 주소 사용
+* 로컬 `127.0.0.1` 주소를 그대로 등록하지 않음
+* Cloudflare Tunnel, OCI, AWS 또는 Workers 주소 사용
+* ChatGPT의 현재 개발자 모드 및 앱 연결 절차
+* OAuth 로그인
+* 읽기 도구 테스트
+* 쓰기 도구 사용자 확인
+* `search`와 `fetch` 호환성 확인
+* 민감한 원문을 기본 검색 대상에서 제외
+
+예시 테스트 질문:
+
+```text
+내 온톨로지에서 최근 MCP 관련 결정을 찾아줘.
+```
+
+```text
+AWS와 OCI를 비교했던 기록을 검색하고 근거 문서를 보여줘.
+```
+
+쓰기 테스트:
+
+```text
+“다음 주에 OCI MCP 서버 비용을 확인한다”는 메모를
+내 OWNtology 입력함에 제안 상태로 추가해줘.
+```
+
+### Claude Code
+
+최신 Claude Code 공식 문서를 확인해 다음 방식을 모두 설명하세요.
+
+* 로컬 stdio
+* 로컬 HTTP
+* 원격 Streamable HTTP
+* 프로젝트 범위와 사용자 범위
+* MCP 상태 확인
+* 서버 승인
+* 인증 헤더 또는 OAuth
+
+README에 특정 버전에만 동작하는 명령을 하드코딩하지 말고, 확인한 현재 명령을 작성하세요.
+
+### Claude Desktop
+
+* 로컬 stdio 설정 예시
+* 원격 HTTP 설정 예시
+* 환경변수 처리
+* 설정 파일에 토큰을 평문으로 넣을 때의 위험
+* 연결 후 도구 목록 확인 방법
+
+### Gemini
+
+지원 범위를 과장하지 마세요.
+
+우선 다음을 공식 지원 대상으로 문서화하세요.
+
+```text
+Gemini CLI
+```
+
+Gemini CLI에 대해 다음을 설명하세요.
+
+* 로컬 stdio 연결
+* HTTP MCP 연결
+* 사용자 범위와 프로젝트 범위
+* 도구 신뢰 설정
+* 인증 헤더
+* MCP 목록과 연결 상태 확인
+
+일반 Gemini 웹 또는 모바일 앱의 사용자 정의 MCP 지원 여부는 현재 공식 문서를 확인하고, 공식 지원이 명확하지 않으면 지원된다고 작성하지 마세요.
+
+---
+
+## 17. 웹 설정 화면 확장
+
+기존 `python3 kit.py web` 화면에 다음 메뉴를 추가하세요.
+
+```text
+MCP 설정
+├─ MCP 사용
+├─ 로컬 HTTP 사용
+├─ 포트
+├─ 쓰기 기능 사용
+├─ 쓰기 방식: 제안만 / 승인된 직접입력
+├─ source 원문 검색 허용
+├─ 감사로그 사용
+└─ 원격 동기화 설정
+
+MCP 입력 승인
+├─ 승인 대기 목록
+├─ 변경 전·후 비교
+├─ 요청 클라이언트
+├─ 승인
+└─ 거절
+```
+
+민감한 토큰을 웹 화면에서 다시 표시하지 마세요.
+
+토큰 입력이 필요하면 저장 후 다음처럼만 표시하세요.
+
+```text
+설정됨: ****
+```
+
+동적 HTML을 만들 때 사용자 데이터에 `innerHTML`을 사용하지 말고 안전한 DOM API 또는 이스케이프 처리를 사용하세요.
+
+---
+
+## 18. Docker 이미지
+
+다음 파일을 추가하세요.
+
+```text
+Dockerfile.mcp
+docker-compose.mcp.yml
+.dockerignore
+```
+
+요구사항:
+
+* 비루트 사용자 실행
+* 최소 이미지
+* Health check
+* 개인 볼트 이미지 포함 금지
+* `config.json` 이미지 포함 금지
+* `.env` 이미지 포함 금지
+* 볼트는 런타임 볼륨으로 연결
+* 읽기 전용 모드 지원
+* 쓰기 모드 명시적 활성화
+* 의존성 버전 고정
+* 취약점 점검 절차 문서화
+
+기존 프로젝트가 외부 pip 의존성 0개를 장점으로 삼고 있으므로, MCP 의존성은 선택 설치로 분리하세요.
+
+예:
+
+```text
+requirements-mcp.txt
+```
+
+일반 수집 기능은 MCP 패키지를 설치하지 않아도 계속 동작해야 합니다.
+
+---
+
+## 19. 보안 요구사항
+
+반드시 다음을 구현하세요.
+
+* 경로 탐색 차단
+* 심볼릭 링크 경계 확인
+* 요청 본문 크기 제한
+* 검색 결과 개수 제한
+* 반환 본문 길이 제한
+* 입력 문자열 길이 제한
+* MIME 및 파일 확장자 제한
+* 임의 명령 실행 금지
+* 임의 파일 수정 금지
+* 원문 폴더 기본 제외
+* CORS 최소화
+* 허용 Host 검증
+* Origin 검증
+* Rate limiting
+* 인증 실패 로그
+* 토큰 마스킹
+* 감사로그
+* 쓰기 기본 비활성화
+* 파괴적 도구 미제공
+* 도구별 읽기·쓰기 메타데이터
+* 중복 요청 방지
+* 모든 원격 통신 HTTPS
+* 민감정보가 오류 응답에 포함되지 않도록 처리
+
+MCP를 통해 검색되는 카카오톡, 메일, 웹페이지 내용에는 악성 프롬프트가 들어 있을 수 있습니다.
+
+문서 본문을 시스템 지시로 취급하지 말고 검색 데이터로만 반환하세요.
+
+MCP 도구 설명 안에 숨겨진 지시, 데이터 유출 지시, 다른 도구 호출 강제 문구를 넣지 마세요.
+
+---
+
+## 20. 테스트
+
+최소한 다음 테스트를 작성하세요.
+
+```text
+tests/mcp/
+├─ test_search.py
+├─ test_fetch.py
+├─ test_path_security.py
+├─ test_write_proposals.py
+├─ test_write_disabled.py
+├─ test_approval.py
+├─ test_audit.py
+├─ test_auth.py
+├─ test_sync.py
+└─ test_http_transport.py
+```
+
+테스트 항목:
+
+* 빈 볼트 검색
+* 한글 검색
+* 검색 결과 제한
+* source 원문 기본 제외
+* quarantine 기본 제외
+* 잘못된 문서 ID
+* `../` 경로 탐색
+* 절대 경로 입력
+* 심볼릭 링크 우회
+* 쓰기 비활성 상태
+* 승인 제안 생성
+* 중복 idempotency key
+* 승인 전 정본 미변경
+* 승인 후 반영
+* 거절된 제안 미반영
+* 인증 없는 원격 요청 거부
+* 잘못된 토큰 거부
+* 로그의 토큰 마스킹
+* 동기화 dry-run
+* 동기화 중복 방지
+* 충돌 격리
+* 로컬 stdio 초기화
+* HTTP health check
+* MCP 도구 목록
+* `search`와 `fetch` 스키마
+
+가능하면 공식 MCP Inspector 또는 현재 권장되는 검사 도구를 사용해 실제 프로토콜 호환성도 검증하세요.
+
+테스트에는 실제 사용자 볼트를 사용하지 마세요.
+
+임시 디렉터리와 가상 데이터만 사용하세요.
+
+---
+
+## 21. README 추가 구조
+
+기존 설치 프롬프트 뒤에 다음 내용을 추가하세요.
+
+```markdown
+## 🔌 MCP로 연결하기
+
+OWNtology 볼트는 로컬 또는 원격 MCP 서버로 실행하여
+ChatGPT, Claude, Gemini CLI에서 검색할 수 있습니다.
+
+| 방식 | 볼트 위치 | 외부 접속 | 특징 |
+|---|---|---:|---|
+| 로컬 stdio | Mac | 불가 | 가장 안전, Claude·Gemini CLI용 |
+| 로컬 HTTP | Mac | 기본 불가 | 로컬 앱 연결용 |
+| Cloudflare Tunnel | Mac | 가능 | Mac이 켜져 있어야 함 |
+| OCI/AWS | 클라우드 복제본 | 가능 | 항상 실행 가능 |
+| Cloudflare Workers | D1/R2 복제본 | 가능 | 서버리스 원격 MCP |
+
+> 원격 MCP는 Mac의 카카오톡·문자·메일 데이터를 직접 수집하지 않습니다.
+> Mac에서 수집한 뒤 사용자가 승인한 데이터만 선택적으로 동기화합니다.
+```
+
+그리고 다음 아코디언을 추가하세요.
+
+```html
+<details>
+<summary><strong>로컬 MCP 연결 방법</strong></summary>
+
+로컬 stdio 및 HTTP 실행 방법과 Claude·Gemini CLI 설정을 작성합니다.
+
+</details>
+
+<details>
+<summary><strong>ChatGPT 원격 MCP 연결 방법</strong></summary>
+
+Cloudflare Tunnel, OCI, AWS, Workers 주소를 ChatGPT에 연결하는
+현재 공식 절차를 작성합니다.
+
+</details>
+
+<details>
+<summary><strong>OCI·AWS·Cloudflare 배포 방법</strong></summary>
+
+각 배포 방식의 구조, 보안, 비용 발생 지점, 삭제 방법을 작성합니다.
+
+</details>
+
+<details>
+<summary><strong>LLM에서 OWNtology에 입력하는 방법</strong></summary>
+
+capture_note와 승인 대기형 입력 도구의 사용 예시를 작성합니다.
+
+</details>
+```
+
+---
+
+## 22. 개인정보 문서 수정
+
+`PRIVACY.md`에 다음 내용을 추가하세요.
+
+* 로컬 MCP는 볼트 데이터를 해당 MCP 클라이언트에 반환할 수 있음
+* 원격 MCP 사용 시 승인된 데이터가 클라우드로 전송될 수 있음
+* ChatGPT, Claude, Gemini 등 LLM 제공자에게 검색어와 조회 결과가 전달될 수 있음
+* LLM 입력 내용이 로컬 또는 원격 볼트에 저장될 수 있음
+* 기본 설정에서는 원문을 원격 동기화하지 않음
+* 사용자가 원격 동기화를 명시적으로 활성화해야 함
+* 원격 저장 데이터 삭제 방법
+* OAuth 연결 해제 방법
+* 감사로그 보존기간
+* 제3자 개인정보 취급 주의
+
+`SECURITY.md`에 다음 내용을 추가하세요.
+
+* MCP 인증 방식
+* 쓰기 승인 구조
+* 토큰 회전
+* 원격 서버 폐기
+* Tunnel 중지
+* 침해 의심 시 조치
+* 모든 MCP 세션 철회 방법
+* 클라우드 비밀정보 교체 방법
+
+---
+
+## 23. 최종 검증
+
+다음을 순서대로 검증하세요.
+
+```bash
+python3 kit.py init
+python3 kit.py doctor
+python3 kit.py mcp reindex
+python3 kit.py mcp status
+python3 -m unittest discover -s tests
+```
+
+별도 MCP 의존성을 설치해야 한다면 가상환경을 사용하세요.
+
+```bash
+python3 -m venv .venv-mcp
+source .venv-mcp/bin/activate
+pip install -r requirements-mcp.txt
+```
+
+그다음 다음 항목을 검증하세요.
+
+1. 기존 `kit.py run`이 MCP 패키지 없이도 동작하는가
+2. MCP stdio 서버가 정상 초기화되는가
+3. HTTP MCP가 loopback에서만 실행되는가
+4. 읽기 전용 기본값이 적용되는가
+5. 원문 폴더가 기본 검색에서 제외되는가
+6. 쓰기 제안이 승인 전 정본을 수정하지 않는가
+7. 원격 동기화가 기본적으로 꺼져 있는가
+8. 인증정보가 Git에 나타나지 않는가
+9. 실제 개인정보가 테스트나 로그에 포함되지 않는가
+10. README 명령이 실제로 실행 가능한가
+
+---
+
+## 24. 최종 보고서
+
+작업 완료 후 다음 형식으로 보고하세요.
+
+```text
+OWNtology-Kit MCP 기능 개발 결과
+
+작업 브랜치:
+...
+
+추가된 주요 파일:
+...
+
+공통 서비스 계층:
+...
+
+구현된 MCP transport:
+- stdio:
+- Streamable HTTP:
+- 기타:
+
+구현된 읽기 도구:
+...
+
+구현된 쓰기 도구:
+...
+
+쓰기 승인 구조:
+...
+
+검색 인덱스:
+...
+
+원격 동기화:
+...
+
+OCI 배포 파일:
+...
+
+AWS 배포 파일:
+...
+
+Cloudflare Tunnel:
+...
+
+Cloudflare Workers:
+...
+
+클라이언트 문서:
+- ChatGPT:
+- Claude Code:
+- Claude Desktop:
+- Gemini CLI:
+
+보안 구현:
+- 인증:
+- 권한:
+- 경로 보호:
+- Rate limit:
+- 감사로그:
+- 원문 기본 제외:
+- 쓰기 기본 비활성화:
+
+테스트:
+- 전체:
+- 성공:
+- 실패:
+- 미실행:
+
+기존 기능 회귀 여부:
+...
+
+사용자가 직접 설정해야 하는 값:
+...
+
+실제 클라우드 배포:
+- 수행함/수행하지 않음
+
+비용이 발생할 수 있는 리소스:
+...
+
+남은 위험과 제한:
+...
+
+다음 권장 작업:
+1.
+2.
+3.
+```
+
+## 최종 판단 기준
+
+* 단순히 MCP 서버가 실행되는 것만으로 완료 처리하지 마세요.
+* 실제 `tools/list`, `search`, `fetch` 호출까지 검증하세요.
+* 원격 서버가 로컬 Mac 데이터를 직접 수집할 수 있다고 작성하지 마세요.
+* ChatGPT에 `127.0.0.1` 주소를 직접 연결할 수 있다고 작성하지 마세요.
+* Gemini 웹 앱이 사용자 정의 MCP를 공식 지원한다고 확인되지 않았다면 지원한다고 작성하지 마세요.
+* Cloudflare Workers에서 로컬 마크다운 경로를 직접 읽을 수 있다고 가정하지 마세요.
+* 쓰기 기능을 기본 활성화하지 마세요.
+* LLM이 임의 파일을 수정하거나 삭제할 수 있게 하지 마세요.
+* 원격 동기화에 `source/` 원문을 기본 포함하지 마세요.
+* 사용자 승인 없이 클라우드 리소스를 생성하거나 비용을 발생시키지 마세요.
+* 사용자 승인 없이 commit, push 또는 Pull Request를 생성하지 마세요.
+
+---
+
+</details>
+
+
 
 ## 사전 요구사항 (macOS)
 
