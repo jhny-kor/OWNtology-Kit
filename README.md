@@ -1,5 +1,7 @@
 # owntology-kit
 
+![OWNtology Kit — Mac의 개인 기록을 안전하게 수집하고 나만의 AI 기억으로 연결합니다](docs/owntology-kit.png)
+
 내 **카카오톡 · 문자(SMS/iMessage) · 메일 · Apple 메모 · Safari 탭 · GitHub 스타(선택)** 를
 수집해서 개인 온톨로지 볼트(마크다운 지식 저장소)로 만들어 주는 킷입니다.
 owntology 개인 볼트 파이프라인을 누구나 쓸 수 있게 설정 분리한 버전입니다.
