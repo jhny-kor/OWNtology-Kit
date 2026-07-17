@@ -33,6 +33,9 @@ DEFAULTS: dict = {
     "sms": {"limit": 500},
     "mail": {"days": 14, "limit": 300},
     "github": {"username": "", "user_context": ""},
+    # 클라우드 동기화 (선택) — rsync 대상. SSH 키 인증이 미리 설정돼 있어야 함(비밀번호 저장 안 함).
+    # 예: "user@server:/home/user/owntology-vault/"  · 방향은 로컬 → 원격(단방향 push).
+    "sync": {"remote": ""},
     # 이름 → entity slug 수동 지정 (기본은 이름 그대로 사용)
     "entity_slugs": {},
 }

@@ -11,13 +11,62 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import sys
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 KIT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(KIT))
 from kitlib import config as kitconfig
+
+
+# ── 백그라운드 작업(수집·동기화) 실행 + 라이브 로그 ────────────
+# 한 번에 하나만 실행. 프런트가 /api/job 을 폴링해 진행 로그를 본다.
+_JOB = {"running": False, "kind": "", "log": [], "code": None}
+_JOB_LOCK = threading.Lock()
+
+
+def _run_job(kind: str, cmd: list[str]) -> None:
+    def worker():
+        env = {**os.environ, "OWNTOLOGY_VAULT": str(kitconfig.vault_path())}
+        proc = subprocess.Popen(cmd, cwd=str(KIT), env=env, text=True,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                bufsize=1)
+        for line in proc.stdout:
+            with _JOB_LOCK:
+                _JOB["log"].append(line.rstrip("\n"))
+                if len(_JOB["log"]) > 500:
+                    _JOB["log"] = _JOB["log"][-500:]
+        proc.wait()
+        with _JOB_LOCK:
+            _JOB["running"] = False
+            _JOB["code"] = proc.returncode
+    with _JOB_LOCK:
+        if _JOB["running"]:
+            return
+        _JOB.update(running=True, kind=kind, log=[f"$ {' '.join(cmd)}"], code=None)
+    threading.Thread(target=worker, daemon=True).start()
+
+
+def start_run() -> dict:
+    _run_job("run", [sys.executable, str(KIT / "kit.py"), "run"])
+    return {"started": "run"}
+
+
+def start_sync() -> dict:
+    remote = (kitconfig.load().get("sync", {}).get("remote") or "").strip()
+    if not remote:
+        raise ValueError("클라우드 동기화 대상(sync.remote) 미설정 — 설정 탭에서 입력하세요")
+    vault = str(kitconfig.vault_path()).rstrip("/") + "/"
+    _run_job("sync", ["rsync", "-az", "--delete", vault, remote])
+    return {"started": "sync"}
+
+
+def job_status() -> dict:
+    with _JOB_LOCK:
+        return dict(_JOB)
 
 # PORT 환경변수 우선(프리뷰/autoPort 대응). 미지정 시 8765 고정.
 HOST = os.getenv("HOST", "127.0.0.1")
@@ -167,6 +216,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(get_people())
             elif self.path == "/api/rooms":
                 self._json(get_rooms())
+            elif self.path == "/api/job":
+                self._json(job_status())
             else:
                 self._json({"error": "not found"}, 404)
         except Exception as e:  # noqa: BLE001
@@ -183,6 +234,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(save_person(data))
             elif self.path == "/api/rooms":
                 self._json(save_rooms(data))
+            elif self.path == "/api/run":
+                self._json(start_run())
+            elif self.path == "/api/sync":
+                self._json(start_sync())
             else:
                 self._json({"error": "not found"}, 404)
         except Exception as e:  # noqa: BLE001
