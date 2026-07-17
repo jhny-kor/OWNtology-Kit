@@ -2410,6 +2410,7 @@ mcp_server.py        MCP 서버 (LLM 연결, 읽기 30개 + 쓰기 도구)
 requirements-mcp.txt MCP 전용 의존성 (코어는 0 의존성)
 deploy/              클라우드 이관 systemd 템플릿 + 가이드
 tests/               파이프라인 스모크 테스트
+AGENTS.md            에이전트(Codex·Claude Code) 실행 규칙
 PRIVACY.md SECURITY.md LICENSE
 ```
 
