@@ -16,6 +16,10 @@ __pycache__/
 .venv/
 venv/
 
+# MCP 서버 감사 로그(볼트 밖에 생길 경우 대비)
+logs/
+.mcp-logs/
+
 # macOS / 에디터
 .DS_Store
 *.swp

@@ -2399,16 +2399,58 @@ launchd로 주기 실행하려면:
 ## 구조
 
 ```
-kit.py               CLI: init | doctor | collect | ontologize | run | web | purge
+kit.py               CLI: init | doctor | collect | ontologize | run | web | mcp | purge
 config.json          사용자 설정 (init이 생성, 웹에서 편집, .gitignore 대상)
-kitlib/              config·vault·security·kakao 공용 모듈
+kitlib/              config·vault·security·kakao·audit 공용 모듈
 collectors/          소스별 수집기 6개
 pipeline/            원문→노트 변환 + 엔티티/관계/인덱스/검증 체인
 schemas/             ontology.schema.json / relation.schema.json
 web/                 설정·수동입력 웹 화면 (127.0.0.1 전용)
+mcp_server.py        MCP 서버 (LLM 연결, 읽기 30개 + 쓰기 도구)
+requirements-mcp.txt MCP 전용 의존성 (코어는 0 의존성)
+deploy/              클라우드 이관 systemd 템플릿 + 가이드
 tests/               파이프라인 스모크 테스트
 PRIVACY.md SECURITY.md LICENSE
 ```
+
+## MCP 서버 — LLM에서 내 볼트 쓰기 (선택)
+
+수집·온톨로지화한 볼트를 **MCP 서버**로 노출하면 Claude·ChatGPT·Gemini가 자연어로
+검색·조회하고, 메모·사실·관계를 볼트에 되쓸 수 있습니다(읽기 30개 도구 + 쓰기).
+
+```bash
+python3 -m pip install -r requirements-mcp.txt   # MCP 전용 의존성(코어는 0 의존성 유지)
+python3 kit.py mcp                                # 로컬 stdio 서버 (본인 = owner, 전체 접근)
+```
+
+로컬(stdio)은 **본인이 자기 Mac에서 실행 = owner 티어**라 카카오·인물·관계·쓰기까지 전부 열립니다.
+`kit.py mcp` 자체는 stdin/stdout으로 통신하므로, 아래처럼 **MCP 클라이언트에 실행 명령으로 등록**합니다.
+
+<details>
+<summary><strong>클라이언트 등록 예시 (Claude Desktop/Code · Codex · Gemini)</strong></summary>
+
+Claude Desktop `claude_desktop_config.json` (또는 Claude Code `.mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "owntology": {
+      "command": "python3",
+      "args": ["/절대경로/OWNtology-Kit/kit.py", "mcp"]
+    }
+  }
+}
+```
+
+Codex/Gemini 등 stdio MCP를 지원하는 클라이언트도 동일하게 `command`+`args`로 등록합니다.
+</details>
+
+**노출 티어**: stdio(로컬)=owner 전체 접근. http(클라우드)=Bearer 토큰 있으면 owner,
+없으면 public(비민감 프로젝트·토픽·통계만). 모든 호출은 `<볼트>/.mcp-logs/audit.log`에 기록됩니다.
+
+**클라우드 이관**(어디서든 접근): 볼트를 서버로 rsync 후 `kit.py mcp --http` +
+`OWNTOLOGY_TOKEN` + Cloudflare Tunnel/리버스 프록시로 노출 — 전체 절차·systemd 템플릿은
+[deploy/README.md](deploy/README.md).
 
 ## 데이터 관리 · 삭제
 

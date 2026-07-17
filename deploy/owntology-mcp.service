@@ -1,0 +1,38 @@
+# owntology-kit MCP 서버 — systemd 유닛 템플릿 (Linux 클라우드: OCI/AWS/기타)
+# 사용법:
+#   1) 아래 <PLACEHOLDER> 를 본인 값으로 치환
+#   2) sudo cp deploy/owntology-mcp.service /etc/systemd/system/
+#   3) sudo systemctl daemon-reload && sudo systemctl enable --now owntology-mcp
+#   4) 상태: systemctl status owntology-mcp  /  로그: journalctl -u owntology-mcp -f
+#
+# 보안: streamable-http 는 반드시 OWNTOLOGY_TOKEN(16자+)과 함께, 리버스 프록시(HTTPS)
+#       뒤에서만 노출하세요. 볼트에는 평문 개인정보가 있습니다(PRIVACY.md).
+
+[Unit]
+Description=owntology-kit MCP server (streamable-http)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=<UNIX_USER>
+WorkingDirectory=<KIT_DIR>
+# 볼트 위치(로컬 Mac에서 rsync/git으로 동기화된 사본)
+Environment=OWNTOLOGY_VAULT=<VAULT_DIR>
+Environment=MCP_TRANSPORT=streamable-http
+# 프록시가 앞단에 있으므로 로컬 바인딩. 프록시 없이 직접 노출하면 0.0.0.0 + 방화벽/토큰 필수.
+Environment=OWNTOLOGY_HOST=127.0.0.1
+Environment=OWNTOLOGY_PORT=7334
+# 공개 도메인(리버스 프록시가 이 호스트로 라우팅). DNS rebinding 허용목록에 추가됨.
+Environment=OWNTOLOGY_PUBLIC_HOST=<mcp.example.com>
+# 16자 이상 무작위 토큰. 예: openssl rand -hex 24
+Environment=OWNTOLOGY_TOKEN=<RANDOM_TOKEN_16PLUS>
+ExecStart=<KIT_DIR>/.venv/bin/python <KIT_DIR>/mcp_server.py
+Restart=on-failure
+RestartSec=5
+# 하드닝(선택)
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -8,6 +8,8 @@
     python3 kit.py ontologize   # 원문 → 대화노트 → 엔티티/관계/인덱스/검증
     python3 kit.py run          # collect + ontologize 원터치
     python3 kit.py web          # 설정·수동입력 웹 화면 (127.0.0.1:8765)
+    python3 kit.py mcp          # MCP 서버 (LLM 연결, 기본 stdio/로컬)
+    python3 kit.py purge        # 원문 삭제 / 보존기간 적용
 
 기본 수집 소스는 전부 꺼져 있다 — kit.py web 에서 켜야 수집한다.
 
@@ -314,6 +316,34 @@ def cmd_web(args) -> int:
     return subprocess.call([sys.executable, str(KIT / "web" / "server.py")])
 
 
+def cmd_mcp(args) -> int:
+    """MCP 서버 실행. 기본 stdio(로컬), --http 로 클라우드용 streamable-http.
+
+    로컬: MCP 클라이언트(Claude Desktop/Code·Codex·Gemini)가 이 명령을 직접 실행한다.
+    클라우드: --http + OWNTOLOGY_TOKEN(16자+) + OWNTOLOGY_PUBLIC_HOST 로 노출."""
+    try:
+        import mcp  # noqa: F401
+    except ImportError:
+        print("MCP 의존성 미설치 — 다음을 실행하세요:\n"
+              "  python3 -m pip install -r requirements-mcp.txt\n"
+              "(수집·온톨로지화 코어는 의존성 없이 동작합니다. MCP 서버만 이 패키지가 필요합니다.)",
+              file=sys.stderr)
+        return 1
+    os.environ["OWNTOLOGY_VAULT"] = str(kitconfig.vault_path())
+    if args.http:
+        os.environ["MCP_TRANSPORT"] = "streamable-http"
+        os.environ.setdefault("OWNTOLOGY_HOST", "127.0.0.1")
+        if len(os.getenv("OWNTOLOGY_TOKEN", "")) < 16:
+            print("⚠️ --http 는 OWNTOLOGY_TOKEN(16자 이상)이 필요합니다 — 무인증 원격 노출 방지.\n"
+                  "  예: OWNTOLOGY_TOKEN=$(openssl rand -hex 24) OWNTOLOGY_HOST=0.0.0.0 "
+                  "python3 kit.py mcp --http", file=sys.stderr)
+            return 2
+    else:
+        os.environ["MCP_TRANSPORT"] = "stdio"
+    # stdio는 stdin/stdout이 MCP 채널 — 프로세스를 그대로 넘긴다.
+    os.execv(sys.executable, [sys.executable, str(KIT / "mcp_server.py")])
+
+
 _DATE_RE = __import__("re").compile(r"(20\d{2}-\d{2}-\d{2})")
 
 
@@ -370,6 +400,9 @@ def main() -> int:
     r = sub.add_parser("run", help="collect + ontologize")
     r.add_argument("--fast-kakao", action="store_true")
     sub.add_parser("web", help="설정·수동입력 웹 화면")
+    mc = sub.add_parser("mcp", help="MCP 서버 실행 (기본 stdio/로컬, --http 클라우드)")
+    mc.add_argument("--http", action="store_true",
+                    help="streamable-http 트랜스포트 (클라우드용, OWNTOLOGY_TOKEN 필요)")
     pg = sub.add_parser("purge", help="원문 삭제 / 보존기간 적용 (기본 dry-run)")
     pg.add_argument("--raw", action="store_true", help="source/ 원문 전체 삭제(대화 노트는 유지)")
     pg.add_argument("--older-than", type=int, default=None, metavar="N",
@@ -378,7 +411,7 @@ def main() -> int:
     args = ap.parse_args()
     return {"init": cmd_init, "doctor": cmd_doctor, "collect": cmd_collect,
             "ontologize": cmd_ontologize, "run": cmd_run, "web": cmd_web,
-            "purge": cmd_purge}[args.cmd](args)
+            "mcp": cmd_mcp, "purge": cmd_purge}[args.cmd](args)
 
 
 if __name__ == "__main__":

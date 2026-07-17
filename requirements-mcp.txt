@@ -1,0 +1,6 @@
+# MCP 서버 전용 의존성 (수집·온톨로지화 코어는 이 파일 없이도 동작).
+# 설치: python3 -m pip install -r requirements-mcp.txt
+mcp>=1.2
+# 아래 둘은 클라우드용 streamable-http 트랜스포트(--http)에만 필요.
+uvicorn>=0.30
+starlette>=0.37
