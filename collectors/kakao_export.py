@@ -43,7 +43,9 @@ import unicodedata
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-import sys; sys.path.insert(0, str(Path(__file__).resolve().parents[1])); from kitlib.config import vault_path as _vp; VAULT = _vp()
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from kitlib.config import vault_path as _vp
+VAULT = _vp()
 KAKAO_SOURCE = VAULT / "source" / "kakao"
 KAKAO_OUT = VAULT / "conversations" / "kakao"
 KAKAO_HASHES = KAKAO_SOURCE / ".hashes.json"

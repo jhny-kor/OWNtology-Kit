@@ -10,11 +10,14 @@ organizations/...)에 매칭해 indexes/conversation_entities.json 으로 출력
   build:  python3 scripts/build_conversation_links.py --build
   query:  python3 scripts/build_conversation_links.py --entity person:kim-jihyeon
 """
-import os, sys, json, argparse
+import sys, json, argparse
+
 from pathlib import Path
 from collections import defaultdict
 
-import sys; sys.path.insert(0, str(Path(__file__).resolve().parents[1])); from kitlib.config import vault_path as _vp; VAULT = _vp()
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from kitlib.config import vault_path as _vp
+VAULT = _vp()
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "kitlib"))
 import vault
 

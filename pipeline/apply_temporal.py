@@ -10,10 +10,13 @@ idempotent. dry-run 기본.
 
 사용법: python3 scripts/apply_temporal.py --apply
 """
-import os, re, sys, argparse
+import re, sys, argparse
+
 from pathlib import Path
 
-import sys; sys.path.insert(0, str(Path(__file__).resolve().parents[1])); from kitlib.config import vault_path as _vp; VAULT = _vp()
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from kitlib.config import vault_path as _vp
+VAULT = _vp()
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "kitlib"))
 import vault
 

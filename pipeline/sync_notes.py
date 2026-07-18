@@ -4,12 +4,14 @@ owntology-kit sync_notes — source/의 카카오톡·SMS 원문을 conversation
 수동 실행: python3 pipeline/sync_notes.py
 """
 
-import csv, hashlib, json, os, glob, re, sys, unicodedata
+import csv, hashlib, json, re, sys, unicodedata
+
 from datetime import datetime
 from pathlib import Path
-from collections import defaultdict
 
-import sys; sys.path.insert(0, str(Path(__file__).resolve().parents[1])); from kitlib.config import vault_path as _vp; VAULT = _vp()
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from kitlib.config import vault_path as _vp
+VAULT = _vp()
 KAKAO_OUT        = VAULT / "conversations/kakao"
 KAKAO_SOURCE_DIR = VAULT / "source/kakao"
 # 같은 방이 이름 변경(이모지↔텍스트)으로 갈라진 경우 하나로 병합 — config kakao.chat_aliases

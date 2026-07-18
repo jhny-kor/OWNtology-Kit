@@ -25,7 +25,9 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-import sys; sys.path.insert(0, str(Path(__file__).resolve().parents[1])); from kitlib.config import vault_path as _vp; VAULT = _vp()
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from kitlib.config import vault_path as _vp
+VAULT = _vp()
 EMAIL_SOURCE = VAULT / "source" / "email"
 STATE_FILE = EMAIL_SOURCE / ".export_state.json"
 

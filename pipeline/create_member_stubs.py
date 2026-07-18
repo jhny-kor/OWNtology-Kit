@@ -11,10 +11,13 @@ group 노트의 members(평문 이름)에 대해, 아직 person 노트가 없는
   python3 scripts/create_member_stubs.py            # dry-run
   python3 scripts/create_member_stubs.py --apply
 """
-import os, sys, re, json, argparse
+import sys, re, json, argparse
+from datetime import date
 from pathlib import Path
 
-import sys; sys.path.insert(0, str(Path(__file__).resolve().parents[1])); from kitlib.config import vault_path as _vp; VAULT = _vp()
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from kitlib.config import vault_path as _vp
+VAULT = _vp()
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "kitlib"))
 import vault
 
@@ -41,7 +44,6 @@ def existing_names() -> dict:
 
 def _person_stub(name: str, relationship: str, phone: str, source_id: str) -> str:
     """수동입력 필드(relationship·phone·aliases)는 빈 값으로 생성 — 웹 화면에서 채움."""
-    from datetime import date
     eid = f"person:{name}"
     return (
         f"---\n"
@@ -144,7 +146,7 @@ def main():
                     f"member_of: [\"{gid}\"]\n"
                     f"sensitivity: sensitive\n"
                     f"source_path: \"people/{m}.md\"\n"
-                    f"valid_from: {__import__('datetime').date.today().isoformat()}\n"
+                    f"valid_from: {date.today().isoformat()}\n"
                     f"valid_to: \n"
                     f"confidence: 0.5\n"
                     f"extraction: auto\n"

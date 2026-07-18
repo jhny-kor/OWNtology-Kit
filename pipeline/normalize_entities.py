@@ -15,11 +15,14 @@ normalize_entities.py — 자동추출 엔티티/토픽 정제 (위원회 P2).
   python3 scripts/normalize_entities.py                # dry-run + 리포트
   python3 scripts/normalize_entities.py --apply
 """
-import os, re, sys, json, argparse
+import re, sys, json, argparse
+
 from pathlib import Path
 from collections import Counter
 
-import sys; sys.path.insert(0, str(Path(__file__).resolve().parents[1])); from kitlib.config import vault_path as _vp; VAULT = _vp()
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from kitlib.config import vault_path as _vp
+VAULT = _vp()
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "kitlib"))
 import vault  # _iter_notes, _note_from_file, _parse_frontmatter 재사용
 

@@ -9,10 +9,13 @@ indexes/relations.json 으로 출력한다. 본문 자연어가 아니라 frontm
   build:  python3 scripts/build_relations_index.py --build
   query:  python3 scripts/build_relations_index.py --entity person:kim-jihyeon
 """
-import os, re, sys, json, argparse
+import re, sys, json, argparse
+
 from pathlib import Path
 
-import sys; sys.path.insert(0, str(Path(__file__).resolve().parents[1])); from kitlib.config import vault_path as _vp; VAULT = _vp()
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from kitlib.config import vault_path as _vp
+VAULT = _vp()
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "kitlib"))
 import vault
 

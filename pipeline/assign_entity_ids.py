@@ -10,10 +10,13 @@ frontmatter의 type 다음 줄에 삽입한다. slug는 name 또는 파일명 �
   python3 scripts/assign_entity_ids.py --apply
 """
 
-import os, re, sys, argparse, unicodedata
+import re, sys, argparse, unicodedata
+
 from pathlib import Path
 
-import sys; sys.path.insert(0, str(Path(__file__).resolve().parents[1])); from kitlib.config import vault_path as _vp; VAULT = _vp()
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from kitlib.config import vault_path as _vp
+VAULT = _vp()
 TARGET_FOLDERS = ["people", "projects"]
 SKIP_DIRS = {"_templates", "_merged", "quarantine"}
 

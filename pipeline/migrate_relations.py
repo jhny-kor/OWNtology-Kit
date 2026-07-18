@@ -10,10 +10,13 @@ frontmatter `relations:` 의 각 항목(`- { subject, relation, object, confiden
   python3 scripts/migrate_relations.py            # dry-run
   python3 scripts/migrate_relations.py --apply
 """
-import os, re, sys, argparse
+import re, sys, argparse
+
 from pathlib import Path
 
-import sys; sys.path.insert(0, str(Path(__file__).resolve().parents[1])); from kitlib.config import vault_path as _vp; VAULT = _vp()
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from kitlib.config import vault_path as _vp
+VAULT = _vp()
 FOLDERS = ["people", "projects", "organizations", "events", "decisions", "preferences"]
 _ITEM = re.compile(r"-\s*\{([^}]*)\}")
 

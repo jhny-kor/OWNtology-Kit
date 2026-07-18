@@ -12,7 +12,10 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 
-import sys; sys.path.insert(0, str(Path(__file__).resolve().parents[1])); from kitlib.config import vault_path as _vp; VAULT = _vp()
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from kitlib.config import vault_path as _vp
+VAULT = _vp()
 SAFARI_DIR = VAULT / "source" / "safari-tabs"
 KAKAO_DIR = VAULT / "ontology"
 OUT_DIR = VAULT / "knowledge" / "links" / "nodes"

@@ -9,11 +9,14 @@ validate_relations.py — relations 가 relation.schema.json 표준을 따르는
   - subject/object 가 실재하는 entity_id (참조 무결성)
 종료코드: 위반 있으면 1.
 """
-import os, re, sys
+import re, sys
+
 from collections import defaultdict
 from pathlib import Path
 
-import sys; sys.path.insert(0, str(Path(__file__).resolve().parents[1])); from kitlib.config import vault_path as _vp; VAULT = _vp()
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from kitlib.config import vault_path as _vp
+VAULT = _vp()
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import build_relations_index as B  # parse_relations 재사용
 

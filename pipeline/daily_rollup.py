@@ -11,7 +11,6 @@
   python3 daily_rollup.py --apply --days 14
 """
 import argparse
-import os
 import re
 import sys
 from collections import defaultdict

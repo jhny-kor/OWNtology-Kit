@@ -32,7 +32,10 @@ from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
-import sys; sys.path.insert(0, str(Path(__file__).resolve().parents[1])); from kitlib.config import vault_path as _vp; VAULT = _vp()
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from kitlib.config import vault_path as _vp
+VAULT = _vp()
 KAKAO_SOURCE = VAULT / "source" / "kakao"
 ONTOLOGY = VAULT / "ontology"
 STATE_FILE = ONTOLOGY / ".enrich_kakao_links_state.json"

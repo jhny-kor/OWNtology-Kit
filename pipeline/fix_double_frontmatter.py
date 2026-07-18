@@ -10,10 +10,13 @@ idempotent — 이중 블록이 아닌 파일은 건드리지 않는다.
   python3 scripts/fix_double_frontmatter.py            # dry-run
   python3 scripts/fix_double_frontmatter.py --apply
 """
-import os, sys, argparse
+import sys, argparse
+
 from pathlib import Path
 
-import sys; sys.path.insert(0, str(Path(__file__).resolve().parents[1])); from kitlib.config import vault_path as _vp; VAULT = _vp()
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from kitlib.config import vault_path as _vp
+VAULT = _vp()
 SKIP_DIRS = {".obsidian", ".omc", ".omx", "opencrab_data", "__pycache__",
              ".git", "quarantine"}
 

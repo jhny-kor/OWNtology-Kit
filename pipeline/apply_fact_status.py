@@ -11,11 +11,14 @@ idempotent.
   python3 scripts/apply_fact_status.py            # dry-run
   python3 scripts/apply_fact_status.py --apply
 """
-import os, re, sys, argparse
+import re, sys, argparse
+
 from datetime import date
 from pathlib import Path
 
-import sys; sys.path.insert(0, str(Path(__file__).resolve().parents[1])); from kitlib.config import vault_path as _vp; VAULT = _vp()
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from kitlib.config import vault_path as _vp
+VAULT = _vp()
 FOLDERS = ["preferences", "decisions", "events", "organizations", "people"]
 TODAY = date(2026, 6, 22).isoformat()
 

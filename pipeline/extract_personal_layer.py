@@ -20,7 +20,6 @@ proposed/confirmed/rejected/superseded)는 다음 실행에서 재생성하지 �
 import argparse
 import hashlib
 import json
-import os
 import re
 import sys
 from datetime import datetime, timedelta

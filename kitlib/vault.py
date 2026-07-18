@@ -3,7 +3,7 @@ owntology vault reader — frontmatter 파싱 + 텍스트 검색
 """
 
 import fnmatch
-import os, re, glob, time
+import os, re, time
 from pathlib import Path, PurePosixPath
 from typing import Optional
 

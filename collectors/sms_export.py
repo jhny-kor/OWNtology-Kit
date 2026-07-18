@@ -27,7 +27,9 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-import sys; sys.path.insert(0, str(Path(__file__).resolve().parents[1])); from kitlib.config import vault_path as _vp; VAULT = _vp()
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from kitlib.config import vault_path as _vp
+VAULT = _vp()
 SMS_SOURCE = VAULT / "source" / "sms"
 
 def safe_name(identifier: str) -> str:

@@ -18,8 +18,8 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -60,20 +60,26 @@ owntology-kit이 관리하는 개인 지식 볼트입니다.
 """
 
 
+def _exec(cmd: list[str]) -> tuple[int, str, str]:
+    """서브프로세스 실행 → (returncode, 전체출력, 마지막줄). _step/_run_collector 공용."""
+    proc = subprocess.run(cmd, cwd=str(KIT), text=True, capture_output=True)
+    out = (proc.stdout + proc.stderr).strip()
+    tail = out.splitlines()[-1][:200] if out else ""
+    return proc.returncode, out, tail
+
+
 def _step(name: str, cmd: list[str], optional: bool = True) -> bool:
     """한 단계 실행. optional이면 실패 시 경고만 남기고 계속(권한/미설치 대비)."""
     print(f"▶ {name}")
-    proc = subprocess.run(cmd, cwd=str(KIT), text=True, capture_output=True)
-    out = (proc.stdout + proc.stderr).strip()
-    tail = out.splitlines()[-1] if out else ""
-    if proc.returncode != 0:
-        msg = out[-800:] if out else f"exit {proc.returncode}"
+    code, out, tail = _exec(cmd)
+    if code != 0:
+        msg = out[-800:] if out else f"exit {code}"
         if optional:
             print(f"  ⚠️ WARN skipped: {msg[:300]}")
             return False
         print(f"  ❌ FAIL: {msg}", file=sys.stderr)
         raise SystemExit(1)
-    print(f"  {tail[:200]}" if tail else "  ok")
+    print(f"  {tail}" if tail else "  ok")
     return True
 
 
@@ -176,16 +182,14 @@ _SKIP_EXIT_CODES = {2, 3}
 def _run_collector(name: str, cmd: list[str]) -> dict:
     """수집기 1개 실행 → {name, status(ok|skip|fail), detail}. 예외를 삼키지 않고 분류."""
     print(f"▶ {name}")
-    proc = subprocess.run(cmd, cwd=str(KIT), text=True, capture_output=True)
-    out = (proc.stdout + proc.stderr).strip()
-    tail = out.splitlines()[-1][:200] if out else ""
-    if proc.returncode == 0:
+    code, _, tail = _exec(cmd)
+    if code == 0:
         print(f"  ✓ {tail}" if tail else "  ✓ ok")
         return {"name": name, "status": "ok", "detail": tail}
-    status = "skip" if proc.returncode in _SKIP_EXIT_CODES else "fail"
+    status = "skip" if code in _SKIP_EXIT_CODES else "fail"
     icon = "⏭️ SKIP" if status == "skip" else "❌ FAIL"
-    print(f"  {icon}: {tail or ('exit ' + str(proc.returncode))}")
-    return {"name": name, "status": status, "detail": tail or f"exit {proc.returncode}"}
+    print(f"  {icon}: {tail or ('exit ' + str(code))}")
+    return {"name": name, "status": status, "detail": tail or f"exit {code}"}
 
 
 def _collect(cfg: dict, args) -> list[dict]:
@@ -344,7 +348,7 @@ def cmd_mcp(args) -> int:
     os.execv(sys.executable, [sys.executable, str(KIT / "mcp_server.py")])
 
 
-_DATE_RE = __import__("re").compile(r"(20\d{2}-\d{2}-\d{2})")
+_DATE_RE = re.compile(r"(20\d{2}-\d{2}-\d{2})")
 
 
 def cmd_purge(args) -> int:

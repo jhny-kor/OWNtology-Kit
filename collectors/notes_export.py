@@ -23,7 +23,9 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-import sys; sys.path.insert(0, str(Path(__file__).resolve().parents[1])); from kitlib.config import vault_path as _vp; VAULT = _vp()
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from kitlib.config import vault_path as _vp
+VAULT = _vp()
 NOTES_OUT = VAULT / "conversations" / "notes"
 STATE_FILE = NOTES_OUT / ".export_state.json"
 RAW_OUT = VAULT / "source" / "apple-notes" / "raw" / "latest.json"
