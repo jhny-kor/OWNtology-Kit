@@ -31,6 +31,10 @@ def _nfc(s: str) -> str:
 def _kakao_canon(name: str) -> str:
     return KAKAO_CHAT_ALIASES.get(name, name)
 
+def _kakao_aliases(name: str) -> list[str]:
+    return sorted({str(old).strip() for old, new in KAKAO_CHAT_ALIASES.items()
+                   if str(new).strip() == name and str(old).strip() != name})
+
 def _kakao_chat_name(filename: str) -> str:
     stem = Path(filename).stem
     prefix = "KakaoTalk_Chat_"
@@ -113,7 +117,8 @@ def _kakao_room_tag(chat_name: str) -> str:
     return re.sub(r'[^\w가-힣]', '', unicodedata.normalize('NFC', chat_name))
 
 
-def _save_kakao_md(chat_name: str, all_rows: list[dict], all_names: set[str] | None = None):
+def _save_kakao_md(chat_name: str, all_rows: list[dict], all_names: set[str] | None = None,
+                   aliases: list[str] | None = None):
     by_date: dict[str, list] = {}
     for row in all_rows:
         date_part = row['Date'].split(' ')[0] if ' ' in row['Date'] else row['Date']
@@ -127,6 +132,8 @@ def _save_kakao_md(chat_name: str, all_rows: list[dict], all_names: set[str] | N
     lines = ['---', 'type: conversation', 'source: kakao',
              f'chat: {chat_name}', f'updated: {datetime.now().strftime("%Y-%m-%d")}',
              f'messages: {len(all_rows)}', f'tags: [{", ".join(tags)}]']
+    if aliases:
+        lines.append(f'aliases: {json.dumps(aliases, ensure_ascii=False)}')
     if phone:
         lines.append(f'phone: "{phone}"')
     # 증거사슬 (P1-5): 카카오 원문이 근거, 자동 추출
@@ -200,7 +207,7 @@ def sync_kakao() -> int:
             continue
 
         all_rows = sorted(rows_map.values(), key=lambda r: r['Date'])
-        _save_kakao_md(chat_name, all_rows, all_names)
+        _save_kakao_md(chat_name, all_rows, all_names, _kakao_aliases(chat_name))
         all_hashes[chat_name] = list(rows_map.keys())
         total_new += new_count
         print(f"  [Kakao] {chat_name} — {len(all_rows)}개 (신규 {new_count}개)")

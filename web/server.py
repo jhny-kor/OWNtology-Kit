@@ -156,41 +156,84 @@ def save_person(data: dict) -> dict:
     return {"saved": rel}
 
 
+def _room_id(value) -> str:
+    return str(value).strip().removeprefix("chat-")
+
+
+def _load_applied_rooms(vault: Path) -> dict:
+    applied_file = vault / "source" / "kakao" / ".room_names_applied.json"
+    if not applied_file.exists():
+        return {}
+    try:
+        data = json.loads(applied_file.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
 def get_rooms() -> list[dict]:
     """카카오 방 목록: collector가 기록한 적용 이름(.room_names_applied.json) 기준."""
     vault = kitconfig.vault_path()
     cfg = kitconfig.load()
-    overrides = cfg.get("kakao", {}).get("room_names") or {}
-    excluded = {str(x).strip() for x in (cfg.get("kakao", {}).get("exclude_rooms") or [])}
-    applied_file = vault / "source" / "kakao" / ".room_names_applied.json"
-    applied = {}
-    if applied_file.exists():
-        try:
-            applied = json.loads(applied_file.read_text(encoding="utf-8"))
-        except Exception:
-            pass
+    overrides = {
+        _room_id(cid): name
+        for cid, name in (cfg.get("kakao", {}).get("room_names") or {}).items()
+    }
+    excluded = {
+        _room_id(x)
+        for x in (cfg.get("kakao", {}).get("exclude_rooms") or [])
+        if str(x).strip()
+    }
+    applied = {_room_id(cid): str(name) for cid, name in _load_applied_rooms(vault).items()}
+    aliases = cfg.get("kakao", {}).get("chat_aliases") or {}
+    aliases_by_name = {}
+    for old, new in aliases.items():
+        old, new = str(old).strip(), str(new).strip()
+        if old and new and old != new:
+            aliases_by_name.setdefault(new, set()).add(old)
     rooms = [{"chat_id": cid, "name": name, "override": overrides.get(cid, ""),
+              "aliases": sorted(aliases_by_name.get(name, set())),
               "excluded": cid in excluded or name in excluded}
              for cid, name in sorted(applied.items(), key=lambda x: x[1])]
     return rooms
 
 
 def save_rooms(data: dict) -> dict:
+    vault = kitconfig.vault_path()
     cfg = kitconfig.load()
     kk = cfg.setdefault("kakao", {})
-    room_names = kk.setdefault("room_names", {})
+    room_names = {_room_id(cid): str(name).strip()
+                  for cid, name in (kk.get("room_names") or {}).items()
+                  if str(name).strip()}
+    kk["room_names"] = room_names
+    chat_aliases = kk.get("chat_aliases")
+    if not isinstance(chat_aliases, dict):
+        chat_aliases = {}
+        kk["chat_aliases"] = chat_aliases
+    applied = {_room_id(cid): str(name) for cid, name in _load_applied_rooms(vault).items()}
     for cid, name in (data.get("room_names") or {}).items():
-        cid = str(cid).strip()
+        cid = _room_id(cid)
         name = str(name).strip()
         if not cid:
             continue
         if name:
+            previous = applied.get(cid, "").strip()
             room_names[cid] = name
+            if previous and previous != name:
+                for old, target in list(chat_aliases.items()):
+                    if str(target).strip() == previous:
+                        chat_aliases[str(old).strip()] = name
+                chat_aliases[previous] = name
         else:
             room_names.pop(cid, None)
     # 수집 제외 방(chat_id 기준) — 웹에서 체크한 방만 반영
     if "exclude_rooms" in data:
-        kk["exclude_rooms"] = [str(c).strip() for c in data["exclude_rooms"] if str(c).strip()]
+        known_ids = set(applied)
+        known_names = set(applied.values())
+        existing = [str(c).strip() for c in (kk.get("exclude_rooms") or []) if str(c).strip()]
+        preserved = [c for c in existing if _room_id(c) not in known_ids and c not in known_names]
+        submitted = [_room_id(c) for c in data["exclude_rooms"] if str(c).strip()]
+        kk["exclude_rooms"] = list(dict.fromkeys(preserved + submitted))
     kitconfig.save(cfg)
     return {"saved": len(room_names), "excluded": len(kk.get("exclude_rooms", []))}
 
