@@ -2,6 +2,7 @@
 import json
 import os
 import sqlite3
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -35,6 +36,14 @@ def main() -> int:
         os.environ["OWNTOLOGY_VAULT"] = str(vault)
         try:
             from web import server
+
+            old_run = server.subprocess.run
+            server.subprocess.run = lambda *args, **kwargs: subprocess.CompletedProcess(
+                args[0], 0, stdout=f"{vault}/\n", stderr="")
+            try:
+                assert server.select_vault_folder()["path"] == str(vault)
+            finally:
+                server.subprocess.run = old_run
 
             applied = {"42": "비밀방", "43": "공개방"}
             (source / ".room_names_applied.json").write_text(

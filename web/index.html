@@ -41,6 +41,8 @@
   input[type=text], input[type=number], textarea {
     width:100%; padding:9px 11px; border:1px solid var(--line); border-radius:9px;
     background:var(--bg); color:var(--fg); font-size:.95rem; font-family:inherit; }
+  .input-row { display:flex; gap:8px; align-items:center; }
+  .input-row input { flex:1; min-width:0; }
   input:focus, textarea:focus { outline:2px solid var(--accent-weak); border-color:var(--accent); }
   textarea { min-height:64px; resize:vertical; }
   .hint { color:var(--muted); font-size:.78rem; margin-top:5px; }
@@ -120,12 +122,16 @@
       <label class="fld">이름 (선택)</label>
       <input type="text" id="me_name">
       <label class="fld">볼트 경로</label>
-      <input type="text" id="vault_path">
+      <div class="input-row">
+        <input type="text" id="vault_path">
+        <button class="btn ghost sm" id="pickVault" type="button">폴더 선택</button>
+      </div>
+      <p class="hint">macOS 폴더 선택 창에서 볼트 폴더를 고를 수 있습니다.</p>
     </div>
 
     <div class="card">
       <h2>수집 소스</h2>
-      <p class="desc">켠 소스만 수집합니다. 각 소스는 권한·설치가 필요할 수 있어요(문제 시 <code>kit.py doctor</code>).</p>
+      <p class="desc">선택한 소스만 수집합니다. 각 소스는 권한·설치가 필요할 수 있어요(문제 시 <code>kit.py doctor</code>).</p>
       <div class="toggles" id="srcs"></div>
     </div>
 
@@ -242,6 +248,22 @@ async function loadConfig() {
 }
 function updateSyncBtn(){ $("#syncBtn").disabled = !$("#sync_remote").value.trim(); }
 $("#sync_remote").addEventListener("input", updateSyncBtn);
+$("#pickVault").onclick = async () => {
+  const button = $("#pickVault");
+  button.disabled = true;
+  try {
+    const r = await fetch("/api/select-folder", {method:"POST", body:"{}"});
+    const data = await r.json();
+    if (data.cancelled) return;
+    if (!r.ok) throw new Error(data.error || "폴더 선택 실패");
+    $("#vault_path").value = data.path;
+    $("#barMsg").textContent = "볼트 경로 선택됨 ✓ — 설정 저장을 눌러 반영하세요";
+  } catch (e) {
+    $("#barMsg").textContent = e.message || "폴더 선택 실패";
+  } finally {
+    button.disabled = false;
+  }
+};
 
 function collectConfig() {
   const sources = {}, pipeline = {};

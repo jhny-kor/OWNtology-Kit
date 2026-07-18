@@ -64,6 +64,27 @@ def start_sync() -> dict:
     return {"started": "sync"}
 
 
+def select_vault_folder() -> dict:
+    if sys.platform != "darwin":
+        raise RuntimeError("맥 폴더 선택은 macOS에서만 사용할 수 있습니다")
+    try:
+        proc = subprocess.run(
+            ["osascript", "-e", 'POSIX path of (choose folder with prompt "볼트 폴더 선택")'],
+            capture_output=True, text=True, timeout=120,
+        )
+    except FileNotFoundError as e:
+        raise RuntimeError("macOS osascript를 찾을 수 없습니다") from e
+    if proc.returncode != 0:
+        error = (proc.stderr or proc.stdout or "").strip()
+        if "user canceled" in error.lower() or "cancel" in error.lower():
+            return {"cancelled": True}
+        raise RuntimeError(error[:300] or "폴더 선택에 실패했습니다")
+    path = Path(proc.stdout.strip()).expanduser()
+    if not path.is_absolute() or not path.is_dir():
+        raise ValueError("선택한 경로가 폴더가 아닙니다")
+    return {"path": str(path)}
+
+
 def job_status() -> dict:
     with _JOB_LOCK:
         return dict(_JOB)
@@ -281,6 +302,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(start_run())
             elif self.path == "/api/sync":
                 self._json(start_sync())
+            elif self.path == "/api/select-folder":
+                self._json(select_vault_folder())
             else:
                 self._json({"error": "not found"}, 404)
         except Exception as e:  # noqa: BLE001
