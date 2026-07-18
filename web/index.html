@@ -64,6 +64,20 @@
   th, td { border-bottom:1px solid var(--line); padding:8px 8px; text-align:left; vertical-align:middle; }
   th { font-size:.75rem; color:var(--muted); font-weight:600; text-transform:none; }
   td input { padding:5px 8px; }
+  #roomsTable .room-exclude { width:16px; height:16px; accent-color:var(--accent); }
+  #roomsTable .room-id { padding:0; border:0; background:none; color:var(--muted); cursor:pointer;
+        font:inherit; text-decoration:underline; text-decoration-style:dotted; }
+  #roomsTable .room-id:hover { color:var(--accent); }
+  #roomsTable .room-preview td { padding:10px 8px 12px; background:var(--bg); white-space:normal; }
+  .room-toolbar { display:flex; align-items:center; gap:8px; margin:0 0 10px; }
+  .room-toolbar label { color:var(--muted); font-size:.78rem; font-weight:600; }
+  .room-toolbar select { padding:5px 8px; border:1px solid var(--line); border-radius:7px;
+        background:var(--bg); color:var(--fg); font:inherit; font-size:.82rem; }
+  .room-preview-title { color:var(--muted); font-size:.75rem; margin-bottom:5px; }
+  .room-message { display:grid; grid-template-columns:minmax(90px, 18%) 1fr; gap:4px 10px;
+        padding:5px 0; border-top:1px solid var(--line); font-size:.82rem; }
+  .room-message-meta { color:var(--muted); }
+  .room-message-body { white-space:pre-wrap; overflow-wrap:anywhere; }
   .empty { color:var(--muted); font-style:italic; padding:16px 0; }
   .row-hint { color:var(--muted); font-size:.72rem; }
   /* buttons */
@@ -181,6 +195,9 @@
   <section id="rooms">
     <div class="card">
       <p class="desc">카카오 방 이름을 바꾸거나 수집에서 제외합니다. 저장 후 다음 수집에 반영됩니다.</p>
+      <div class="room-toolbar"><label for="roomFilter">조회</label>
+        <select id="roomFilter"><option value="active">수집 대상만</option><option value="excluded">제외된 채팅방</option><option value="all">전체</option></select>
+        <span class="msg" id="roomCount"></span></div>
       <table id="roomsTable">
         <thead><tr><th>chat_id</th><th>현재 채팅방 이름</th><th>이전 이름/별칭</th><th>별도 지정 이름</th><th>제외</th></tr></thead>
         <tbody></tbody>
@@ -358,28 +375,78 @@ async function loadPeople() {
 }
 
 // ── rooms tab ──
+async function saveRooms() {
+  const room_names = {}, exclude_rooms = [];
+  const rows = [...$("#roomsTable tbody").querySelectorAll("tr[data-room-excluded]")];
+  rows.forEach(row => {
+    const input = row.querySelector("[data-cid]");
+    const checkbox = row.querySelector("[data-excl]");
+    room_names[input.dataset.cid] = input.value.trim();
+    if (checkbox.checked) exclude_rooms.push(checkbox.dataset.excl);
+    row.dataset.roomExcluded = String(checkbox.checked);
+  });
+  const r = await fetch("/api/rooms", {method:"POST", body: JSON.stringify({room_names, exclude_rooms})});
+  $("#roomsMsg").textContent = r.ok ? "저장됨 ✓ — 다음 수집에 반영" : "저장 실패";
+  applyRoomFilter();
+}
 async function loadRooms() {
   const rooms = await (await fetch("/api/rooms")).json();
   const tb = $("#roomsTable tbody");
   tb.innerHTML = rooms.length ? "" : `<tr><td colspan="5" class="empty">방 목록 없음 — 먼저 카카오 수집을 실행하세요</td></tr>`;
   for (const r of rooms) {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td class="row-hint">${r.chat_id}</td><td></td><td></td>
+    tr.dataset.roomExcluded = String(r.excluded);
+    tr.innerHTML = `<td class="row-hint" title="최근 메시지 보기"><button class="room-id" type="button" data-room-id="${r.chat_id}">${r.chat_id}</button></td><td></td><td></td>
       <td><input value="${r.override||""}" data-cid="${r.chat_id}"></td>
-      <td style="text-align:center"><label class="sw"><input type="checkbox" data-excl="${r.chat_id}"
-        ${r.excluded?"checked":""}><i></i></label></td>`;
+      <td style="text-align:center"><input class="room-exclude" type="checkbox" data-excl="${r.chat_id}"
+        aria-label="제외" ${r.excluded?"checked":""}></td>`;
     tr.children[1].textContent = r.name;
     tr.children[2].textContent = (r.aliases || []).join(", ");
+    tr.querySelector("[data-room-id]").addEventListener("click", () => toggleRoomMessages(tr, r.chat_id));
+    tr.querySelector("[data-cid]").addEventListener("change", saveRooms);
+    tr.querySelector("[data-excl]").addEventListener("change", saveRooms);
     tb.appendChild(tr);
   }
+  applyRoomFilter();
 }
-$("#saveRooms").onclick = async () => {
-  const room_names = {}, exclude_rooms = [];
-  document.querySelectorAll("[data-cid]").forEach(i => room_names[i.dataset.cid] = i.value.trim());
-  document.querySelectorAll("[data-excl]").forEach(c => { if (c.checked) exclude_rooms.push(c.dataset.excl); });
-  const r = await fetch("/api/rooms", {method:"POST", body: JSON.stringify({room_names, exclude_rooms})});
-  $("#roomsMsg").textContent = r.ok ? "저장됨 ✓ — 다음 수집에 반영" : "저장 실패";
-};
+function applyRoomFilter() {
+  const mode = $("#roomFilter").value;
+  let visible = 0;
+  document.querySelectorAll(".room-preview").forEach(row => row.remove());
+  $("#roomsTable tbody").querySelectorAll("tr[data-room-excluded]").forEach(row => {
+    const excluded = row.dataset.roomExcluded === "true";
+    row.hidden = mode === "active" ? excluded : mode === "excluded" ? !excluded : false;
+    if (!row.hidden) visible++;
+  });
+  $("#roomCount").textContent = `${visible}개`;
+}
+async function toggleRoomMessages(tr, chatId) {
+  const current = tr.nextElementSibling;
+  if (current?.classList.contains("room-preview")) { current.remove(); return; }
+  document.querySelectorAll(".room-preview").forEach(row => row.remove());
+  const preview = document.createElement("tr"); preview.className = "room-preview";
+  const cell = document.createElement("td"); cell.colSpan = 5; cell.textContent = "최근 메시지 불러오는 중…";
+  preview.appendChild(cell); tr.after(preview);
+  try {
+    const response = await fetch(`/api/room-messages?chat_id=${encodeURIComponent(chatId)}&limit=5`);
+    if (!response.ok) throw new Error();
+    const data = await response.json(); cell.replaceChildren();
+    const title = document.createElement("div"); title.className = "room-preview-title";
+    title.textContent = `최근 메시지 ${data.messages.length}개`;
+    cell.appendChild(title);
+    if (!data.messages.length) { cell.append("저장된 메시지가 없습니다."); return; }
+    for (const message of data.messages) {
+      const row = document.createElement("div"); row.className = "room-message";
+      const meta = document.createElement("div"); meta.className = "room-message-meta";
+      meta.textContent = `${message.author || "알 수 없음"} · ${message.time_raw_with_date || message.time_raw || "시간 없음"}`;
+      const body = document.createElement("div"); body.className = "room-message-body";
+      body.textContent = message.body || "(내용 없음)";
+      row.append(meta, body); cell.appendChild(row);
+    }
+  } catch { cell.textContent = "최근 메시지를 불러오지 못했습니다."; }
+}
+$("#saveRooms").onclick = saveRooms;
+$("#roomFilter").onchange = applyRoomFilter;
 
 loadConfig(); loadPeople(); loadRooms();
 // 페이지 로드 시 진행 중인 작업이 있으면 이어서 표시

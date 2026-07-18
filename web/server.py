@@ -16,6 +16,7 @@ import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 KIT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(KIT))
@@ -219,6 +220,36 @@ def get_rooms() -> list[dict]:
     return rooms
 
 
+def get_room_messages(chat_id: str, limit: int = 5) -> dict:
+    cid = _room_id(chat_id)
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", cid):
+        raise ValueError("유효하지 않은 chat_id")
+    room = next((r for r in get_rooms() if r["chat_id"] == cid), None)
+    if room is None:
+        raise ValueError("알 수 없는 chat_id")
+    source = kitconfig.vault_path() / "source" / "kakao"
+    candidates = [
+        source / f"kmsg-katok-id-{cid}.json",
+        source / f"kmsg-katok-{cid}.json",
+    ]
+    snapshot = next((path for path in candidates if path.is_file()), None)
+    if snapshot is None:
+        for path in sorted(source.glob("kmsg-*.json")):
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if str(data.get("chat", "")).strip() == room["name"]:
+                snapshot = path
+                break
+    if snapshot is None:
+        return {"chat_id": cid, "name": room["name"], "messages": []}
+    data = json.loads(snapshot.read_text(encoding="utf-8"))
+    messages = data.get("messages") or []
+    count = max(1, min(int(limit), 20))
+    return {"chat_id": cid, "name": room["name"], "messages": messages[-count:]}
+
+
 def save_rooms(data: dict) -> dict:
     vault = kitconfig.vault_path()
     cfg = kitconfig.load()
@@ -272,15 +303,22 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         try:
-            if self.path in ("/", "/index.html"):
+            parsed = urlparse(self.path)
+            if parsed.path in ("/", "/index.html"):
                 self._send(200, INDEX.read_bytes(), "text/html; charset=utf-8")
-            elif self.path == "/api/config":
+            elif parsed.path == "/api/config":
                 self._json(kitconfig.load())
-            elif self.path == "/api/people":
+            elif parsed.path == "/api/people":
                 self._json(get_people())
-            elif self.path == "/api/rooms":
+            elif parsed.path == "/api/rooms":
                 self._json(get_rooms())
-            elif self.path == "/api/job":
+            elif parsed.path == "/api/room-messages":
+                params = parse_qs(parsed.query)
+                self._json(get_room_messages(
+                    params.get("chat_id", [""])[0],
+                    int(params.get("limit", [5])[0]),
+                ))
+            elif parsed.path == "/api/job":
                 self._json(job_status())
             else:
                 self._json({"error": "not found"}, 404)

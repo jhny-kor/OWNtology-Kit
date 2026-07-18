@@ -112,6 +112,13 @@ def main() -> int:
             assert note.exists()
             note_text = note.read_text(encoding="utf-8")
             assert 'aliases: ["비밀방", "옛비밀방"]' in note_text
+
+            recent = server.get_room_messages("chat-42", limit=1)
+            assert [message["body"] for message in recent["messages"]] == ["비밀"]
+            html = (KIT / "web" / "index.html").read_text(encoding="utf-8")
+            assert 'id="roomFilter"' in html
+            assert 'class="room-exclude"' in html
+            assert "/api/room-messages?chat_id=" in html
         finally:
             kitconfig.CONFIG_FILE = old_config_file
             if old_vault is None:
