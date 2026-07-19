@@ -80,6 +80,49 @@
   .room-message-body { white-space:pre-wrap; overflow-wrap:anywhere; }
   .empty { color:var(--muted); font-style:italic; padding:16px 0; }
   .row-hint { color:var(--muted); font-size:.72rem; }
+  .link-toolbar { display:flex; align-items:center; gap:10px; margin-bottom:12px; flex-wrap:wrap; }
+  .link-sources { display:flex; gap:4px; }
+  .link-sources button { padding:7px 11px; border:1px solid var(--line); border-radius:8px;
+        background:var(--card); color:var(--muted); cursor:pointer; font:inherit; font-size:.8rem; font-weight:600; }
+  .link-sources button.on { color:var(--accent); border-color:var(--accent); background:var(--accent-weak); }
+  #linkSearch { flex:1; min-width:180px; padding:7px 10px; font-size:.85rem; }
+  .link-rulebox { display:grid; grid-template-columns:minmax(220px, 1fr) auto; gap:8px 12px; align-items:end;
+        margin:0 0 12px; padding:10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); }
+  .link-rulebox label { color:var(--muted); font-size:.78rem; font-weight:600; }
+  .link-rulebox textarea { display:block; width:100%; min-height:48px; margin-top:5px; padding:7px 9px; resize:vertical; }
+  .link-rule-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .link-rule-actions label { display:flex; align-items:center; gap:5px; white-space:nowrap; }
+  .link-exclude { width:16px; height:16px; accent-color:var(--accent); }
+  .link-excluded { opacity:.58; }
+  #linksTable { table-layout:fixed; }
+  #linksTable th:nth-child(1), #linksTable td:nth-child(1) { width:35%; }
+  #linksTable th:nth-child(3), #linksTable td:nth-child(3) { width:96px; }
+  #linksTable th:nth-child(4), #linksTable td:nth-child(4) { width:54px; text-align:center; }
+  #linksTable th:nth-child(5), #linksTable td:nth-child(5) { width:132px; text-align:right; }
+  .link-title { color:var(--fg); font-weight:600; text-decoration:none; overflow-wrap:anywhere; }
+  .link-title:hover { color:var(--accent); text-decoration:underline; }
+  .link-summary { color:var(--muted); font-size:.8rem; line-height:1.4; }
+  .link-pager { display:flex; justify-content:center; align-items:center; gap:10px; margin-top:12px; }
+  .link-detail { margin-top:16px; padding-top:16px; border-top:1px solid var(--line); }
+  .link-detail[hidden] { display:none; }
+  .link-detail h2 { margin:0 0 4px; font-size:1.05rem; }
+  .link-detail-url { display:block; color:var(--accent); font-size:.82rem; overflow-wrap:anywhere; margin-bottom:10px; }
+  .link-detail-summary { margin:8px 0 12px; color:var(--fg); font-size:.9rem; }
+  .link-meta { display:grid; grid-template-columns:max-content 1fr; gap:4px 12px; margin:10px 0; font-size:.8rem; }
+  .link-meta dt { color:var(--muted); font-weight:600; }
+  .link-meta dd { margin:0; overflow-wrap:anywhere; }
+  .link-content { max-height:48vh; overflow:auto; margin:12px 0 0; padding:12px;
+        border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--fg);
+        font:.78rem/1.55 ui-monospace,SFMono-Regular,Menlo,monospace; white-space:pre-wrap; overflow-wrap:anywhere; }
+  @media (max-width:620px) {
+    #linksTable th:nth-child(2), #linksTable td:nth-child(2) { display:none; }
+    #linksTable th:nth-child(1), #linksTable td:nth-child(1) { width:auto; }
+    #linksTable th:nth-child(3), #linksTable td:nth-child(3) { width:82px; }
+    #linksTable th:nth-child(4), #linksTable td:nth-child(4) { width:48px; }
+    #linksTable th:nth-child(5), #linksTable td:nth-child(5) { width:66px; }
+    .link-rulebox { grid-template-columns:1fr; }
+    .link-rule-actions { justify-content:space-between; }
+  }
   /* buttons */
   button.btn { padding:10px 18px; border:none; border-radius:10px; cursor:pointer;
         font-size:.92rem; font-weight:600; transition:.15s; }
@@ -125,6 +168,7 @@
     <button data-tab="config" class="on">설정</button>
     <button data-tab="people">사람</button>
     <button data-tab="rooms">채팅방</button>
+    <button data-tab="links">링크</button>
   </nav>
 
   <section id="config" class="on">
@@ -206,6 +250,47 @@
         <span class="msg" id="roomsMsg"></span></div>
     </div>
   </section>
+
+  <section id="links">
+    <div class="card">
+      <p class="desc">수집·정리된 링크를 출처별로 찾고, 저장된 내용과 메타데이터를 확인합니다.</p>
+      <div class="link-toolbar">
+        <div class="link-sources" aria-label="링크 출처">
+          <button type="button" class="on" data-link-source="github" aria-pressed="true">GitHub</button>
+          <button type="button" data-link-source="kakao" aria-pressed="false">카톡 추출 링크</button>
+          <button type="button" data-link-source="other" aria-pressed="false">기타 링크</button>
+        </div>
+        <input type="search" id="linkSearch" placeholder="제목, URL, 도메인 검색" aria-label="링크 검색">
+      </div>
+      <div class="link-rulebox">
+        <label>도메인 수집 제외 규칙
+          <textarea id="linkExcludeDomains" placeholder="예: youtube.com&#10;example.com (하위 도메인 포함)"></textarea>
+        </label>
+        <div class="link-rule-actions">
+          <label><input type="checkbox" id="showExcludedLinks"> 제외된 링크 포함</label>
+          <button class="btn ghost sm" type="button" id="saveLinkRules">규칙 저장</button>
+          <span class="msg" id="linkRulesMsg"></span>
+        </div>
+      </div>
+      <div class="msg" id="linkCount">링크를 불러오는 중…</div>
+      <table id="linksTable">
+        <thead><tr><th>링크</th><th>내용</th><th>날짜</th><th>제외</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="link-pager">
+        <button class="btn ghost sm" type="button" id="linkPrev">이전</button>
+        <span class="msg" id="linkPageInfo"></span>
+        <button class="btn ghost sm" type="button" id="linkNext">다음</button>
+      </div>
+      <div class="link-detail" id="linkDetail" hidden>
+        <h2 id="linkDetailTitle"></h2>
+        <a class="link-detail-url" id="linkDetailUrl" target="_blank" rel="noopener noreferrer"></a>
+        <p class="link-detail-summary" id="linkDetailSummary"></p>
+        <dl class="link-meta" id="linkMeta"></dl>
+        <pre class="link-content" id="linkContent"></pre>
+      </div>
+    </div>
+  </section>
 </main>
 
 <div class="actionbar">
@@ -236,11 +321,16 @@ const SRC_LABEL = {kakao:"카카오톡", sms:"SMS·iMessage", mail:"메일", not
                    safari_tabs:"Safari 탭", github_stars:"GitHub 스타"};
 const STAGE_LABEL = {member_stubs:"인물 스텁 생성", link_nodes:"링크 노드(카카오+Safari)",
                      personal_layer:"개인계층 후보(결정·사건·선호)", daily_rollup:"일일 롤업"};
+const LINK_META_LABEL = {date:"날짜", domain:"도메인", sources:"원본 출처", source_count:"출처 수",
+                         language:"언어", github_stars:"GitHub 스타", topics:"주제",
+                         "카테고리":"카테고리", "학습상태":"학습 상태", enriched:"내용 보강"};
 let cfg = {};
+let linkState = {source:"github", page:1, limit:50, total:0, loaded:false, request:0, includeExcluded:false};
 
 document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
   document.querySelectorAll("nav button, section").forEach(e => e.classList.remove("on"));
   b.classList.add("on"); $("#" + b.dataset.tab).classList.add("on");
+  if (b.dataset.tab === "links" && !linkState.loaded) { loadLinkRules(); loadLinks(); }
 });
 
 function toggle(key, label, on) {
@@ -448,7 +538,153 @@ async function toggleRoomMessages(tr, chatId) {
 $("#saveRooms").onclick = saveRooms;
 $("#roomFilter").onchange = applyRoomFilter;
 
-loadConfig(); loadPeople(); loadRooms();
+function textCell(value, className="") {
+  const cell = document.createElement("td");
+  if (className) cell.className = className;
+  cell.textContent = value;
+  return cell;
+}
+
+async function loadLinkRules() {
+  try {
+    const response = await fetch("/api/link-rules");
+    if (!response.ok) throw new Error();
+    const data = await response.json();
+    $("#linkExcludeDomains").value = (data.exclude_domains || []).join("\n");
+  } catch { $("#linkRulesMsg").textContent = "규칙을 불러오지 못했습니다."; }
+}
+
+async function saveLinkRules() {
+  const msg = $("#linkRulesMsg"); msg.textContent = "저장 중…";
+  const domains = $("#linkExcludeDomains").value.split(/[\n,]+/).map(item => item.trim()).filter(Boolean);
+  try {
+    const response = await fetch("/api/link-rules", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({exclude_domains:domains}),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "저장 실패");
+    $("#linkExcludeDomains").value = (data.exclude_domains || []).join("\n");
+    msg.textContent = data.invalid?.length ? `저장됨 · 인식하지 못한 값 ${data.invalid.length}개` : "저장되었습니다.";
+    linkState.page = 1; loadLinks();
+  } catch (error) { msg.textContent = error.message || "저장하지 못했습니다."; }
+}
+
+async function toggleLinkExclusion(item, checkbox) {
+  try {
+    const response = await fetch("/api/link-exclusion", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({source:linkState.source, url:item.url, excluded:checkbox.checked}),
+    });
+    if (!response.ok) throw new Error();
+    linkState.page = 1; loadLinks();
+  } catch { checkbox.checked = !checkbox.checked; $("#linkCount").textContent = "제외 설정을 저장하지 못했습니다."; }
+}
+
+async function deleteLink(item) {
+  if (!window.confirm(`이 ${linkState.source} 링크를 삭제할까요?\n${item.title}`)) return;
+  try {
+    const response = await fetch("/api/link-delete", {
+      method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({id:item.id}),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "삭제 실패");
+    $("#linkCount").textContent = data.deleted ? "삭제되었습니다." : "이 출처에서 제외되었습니다.";
+    linkState.page = 1; loadLinks();
+  } catch (error) { $("#linkCount").textContent = error.message || "삭제하지 못했습니다."; }
+}
+
+async function loadLinks() {
+  const request = ++linkState.request;
+  const params = new URLSearchParams({
+    source:linkState.source, q:$("#linkSearch").value.trim(), page:String(linkState.page),
+    limit:String(linkState.limit), include_excluded:linkState.includeExcluded ? "1" : "0",
+  });
+  $("#linkCount").textContent = "링크를 불러오는 중…";
+  $("#linkDetail").hidden = true;
+  try {
+    const response = await fetch(`/api/links?${params}`);
+    if (!response.ok) throw new Error();
+    const data = await response.json();
+    if (request !== linkState.request) return;
+    linkState.total = data.total; linkState.loaded = true;
+    const tb = $("#linksTable tbody"); tb.replaceChildren();
+    if (!data.items.length) {
+      const row = document.createElement("tr");
+      const cell = textCell("해당 링크가 없습니다.", "empty"); cell.colSpan = 5;
+      row.appendChild(cell); tb.appendChild(row);
+    }
+    for (const item of data.items) {
+      const row = document.createElement("tr");
+      if (item.excluded) row.className = "link-excluded";
+      const linkCell = document.createElement("td");
+      const link = document.createElement("a");
+      link.className = "link-title"; link.href = item.url; link.target = "_blank";
+      link.rel = "noopener noreferrer"; link.textContent = item.title;
+      const domain = document.createElement("div"); domain.className = "row-hint";
+      domain.textContent = item.domain; linkCell.append(link, domain);
+      const summary = item.needs_enrichment ? "내용 보강 후보 · 저장된 요약 없음" : (item.summary || "저장된 요약 없음");
+      row.append(linkCell, textCell(summary, "link-summary"), textCell(item.date));
+      const excludeCell = document.createElement("td");
+      const exclude = document.createElement("input"); exclude.className = "link-exclude";
+      exclude.type = "checkbox"; exclude.checked = Boolean(item.excluded);
+      exclude.setAttribute("aria-label", `${item.title} 제외`);
+      exclude.addEventListener("change", () => toggleLinkExclusion(item, exclude));
+      excludeCell.appendChild(exclude); row.appendChild(excludeCell);
+      const action = document.createElement("td");
+      const button = document.createElement("button"); button.className = "btn ghost sm";
+      button.type = "button"; button.textContent = "내용"; button.addEventListener("click", () => loadLinkDetail(item.id));
+      const remove = document.createElement("button"); remove.className = "btn ghost sm";
+      remove.type = "button"; remove.textContent = "삭제"; remove.addEventListener("click", () => deleteLink(item));
+      action.append(button, remove); row.appendChild(action); tb.appendChild(row);
+    }
+    const pages = Math.max(1, Math.ceil(data.total / data.limit));
+    $("#linkCount").textContent = `${data.total.toLocaleString()}개${linkState.includeExcluded ? " · 제외 포함" : ""}`;
+    $("#linkPageInfo").textContent = `${data.page} / ${pages}`;
+    $("#linkPrev").disabled = data.page <= 1; $("#linkNext").disabled = data.page >= pages;
+  } catch {
+    if (request !== linkState.request) return;
+    $("#linkCount").textContent = "링크를 불러오지 못했습니다.";
+  }
+}
+
+async function loadLinkDetail(id) {
+  const detail = $("#linkDetail"); detail.hidden = false;
+  $("#linkDetailTitle").textContent = "내용을 불러오는 중…";
+  $("#linkMeta").replaceChildren(); $("#linkContent").textContent = "";
+  try {
+    const response = await fetch(`/api/link?id=${encodeURIComponent(id)}`);
+    if (!response.ok) throw new Error();
+    const data = await response.json();
+    $("#linkDetailTitle").textContent = data.title;
+    const url = $("#linkDetailUrl"); url.href = data.url; url.textContent = data.url;
+    const summary = $("#linkDetailSummary"); summary.textContent = data.summary; summary.hidden = !data.summary;
+    const meta = $("#linkMeta");
+    for (const [key, value] of Object.entries(data.metadata)) {
+      const term = document.createElement("dt"); term.textContent = LINK_META_LABEL[key] || key;
+      const description = document.createElement("dd"); description.textContent = Array.isArray(value) ? value.join(", ") : String(value);
+      meta.append(term, description);
+    }
+    $("#linkContent").textContent = data.content || "저장된 내용이 없습니다.";
+    detail.scrollIntoView({behavior:"smooth", block:"nearest"});
+  } catch { $("#linkDetailTitle").textContent = "링크 내용을 불러오지 못했습니다."; }
+}
+
+document.querySelectorAll("[data-link-source]").forEach(button => button.addEventListener("click", () => {
+  linkState.source = button.dataset.linkSource; linkState.page = 1;
+  document.querySelectorAll("[data-link-source]").forEach(item => {
+    const selected = item === button; item.classList.toggle("on", selected); item.setAttribute("aria-pressed", String(selected));
+  });
+  loadLinks();
+}));
+$("#showExcludedLinks").onchange = event => { linkState.includeExcluded = event.target.checked; linkState.page = 1; loadLinks(); };
+$("#saveLinkRules").onclick = saveLinkRules;
+let linkSearchTimer;
+$("#linkSearch").addEventListener("input", () => { clearTimeout(linkSearchTimer); linkState.page = 1; linkSearchTimer = setTimeout(loadLinks, 250); });
+$("#linkPrev").onclick = () => { if (linkState.page > 1) { linkState.page--; loadLinks(); } };
+$("#linkNext").onclick = () => { if (linkState.page * linkState.limit < linkState.total) { linkState.page++; loadLinks(); } };
+
+loadConfig(); loadPeople(); loadRooms(); loadLinkRules();
 // 페이지 로드 시 진행 중인 작업이 있으면 이어서 표시
 fetch("/api/job").then(r=>r.json()).then(j=>{ if(j.running){ openDrawer(j.kind==="sync"?"클라우드 동기화":"수집·온톨로지화"); pollJob(); }});
 </script>

@@ -10,7 +10,9 @@ from __future__ import annotations
 import copy
 import json
 import os
+import re
 from pathlib import Path
+from urllib.parse import urlparse
 
 KIT_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_FILE = KIT_ROOT / "config.json"
@@ -33,12 +35,79 @@ DEFAULTS: dict = {
     "sms": {"limit": 500},
     "mail": {"days": 14, "limit": 300},
     "github": {"username": "", "user_context": ""},
+    "links": {
+        "exclude_domains": [],
+        "exclude_urls": {"github": [], "kakao": [], "other": []},
+    },
     # 클라우드 동기화 (선택) — rsync 대상. SSH 키 인증이 미리 설정돼 있어야 함(비밀번호 저장 안 함).
     # 예: "user@server:/home/user/owntology-vault/"  · 방향은 로컬 → 원격(단방향 push).
     "sync": {"remote": ""},
     # 이름 → entity slug 수동 지정 (기본은 이름 그대로 사용)
     "entity_slugs": {},
 }
+
+LINK_SOURCES = {"github", "kakao", "other"}
+_DOMAIN_RE = re.compile(r"^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
+
+
+def normalize_link_url(value: str) -> str:
+    value = str(value or "").strip().rstrip(".,;")
+    try:
+        parsed = urlparse(value)
+    except ValueError:
+        return ""
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return ""
+    path = parsed.path or ""
+    if path != "/" and path.endswith("/"):
+        path = path.rstrip("/")
+    result = f"{parsed.scheme.lower()}://{parsed.netloc.lower()}{path}"
+    if parsed.params:
+        result += f";{parsed.params}"
+    if parsed.query:
+        result += f"?{parsed.query}"
+    if parsed.fragment:
+        result += f"#{parsed.fragment}"
+    return result
+
+
+def normalize_link_domain(value: str) -> str:
+    raw = str(value or "").strip().lower()
+    if "://" in raw:
+        try:
+            raw = urlparse(raw).netloc
+        except ValueError:
+            return ""
+    raw = raw.split("/", 1)[0].split(":", 1)[0].strip().removeprefix("*.").removeprefix("www.")
+    return raw if _DOMAIN_RE.fullmatch(raw) else ""
+
+
+def link_source_kind(source: str) -> str:
+    return "other" if source in {"safari", "other"} else source
+
+
+def is_link_excluded(url: str, source: str, settings: dict | None = None) -> bool:
+    cfg = (settings or load()).get("links", {})
+    normalized = normalize_link_url(url)
+    if not normalized:
+        return False
+    source = link_source_kind(str(source))
+    exact = {
+        normalize_link_url(item)
+        for item in (cfg.get("exclude_urls", {}).get(source, []) or [])
+    }
+    if normalized in exact:
+        return True
+    try:
+        host = urlparse(normalized).hostname or ""
+    except ValueError:
+        return False
+    host = host.lower().removeprefix("www.")
+    domains = {
+        normalize_link_domain(item)
+        for item in (cfg.get("exclude_domains", []) or [])
+    }
+    return any(host == domain or host.endswith("." + domain) for domain in domains if domain)
 
 
 def _merge(base: dict, override: dict) -> dict:

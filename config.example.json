@@ -38,6 +38,14 @@
     "username": "",
     "user_context": ""
   },
+  "links": {
+    "exclude_domains": [],
+    "exclude_urls": {
+      "github": [],
+      "kakao": [],
+      "other": []
+    }
+  },
   "sync": {
     "remote": ""
   },

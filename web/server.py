@@ -14,6 +14,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -21,12 +22,23 @@ from urllib.parse import parse_qs, urlparse
 KIT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(KIT))
 from kitlib import config as kitconfig
+from pipeline.build_link_nodes import (
+    BARE_URL_RE,
+    MARKDOWN_LINK_RE,
+    LinkNode,
+    date_from_path,
+    domain_for,
+    filename_for,
+    normalize_url,
+)
 
 
 # ── 백그라운드 작업(수집·동기화) 실행 + 라이브 로그 ────────────
 # 한 번에 하나만 실행. 프런트가 /api/job 을 폴링해 진행 로그를 본다.
 _JOB = {"running": False, "kind": "", "log": [], "code": None}
 _JOB_LOCK = threading.Lock()
+_LINK_CACHE: dict[str, tuple[float, list[dict]]] = {}
+_LINK_CACHE_LOCK = threading.Lock()
 
 
 def _run_job(kind: str, cmd: list[str]) -> None:
@@ -250,6 +262,286 @@ def get_room_messages(chat_id: str, limit: int = 5) -> dict:
     return {"chat_id": cid, "name": room["name"], "messages": messages[-count:]}
 
 
+def _clear_link_cache() -> None:
+    with _LINK_CACHE_LOCK:
+        _LINK_CACHE.clear()
+
+
+def get_link_rules() -> dict:
+    links = kitconfig.load().get("links", {})
+    excluded_urls = links.get("exclude_urls", {}) or {}
+    return {
+        "exclude_domains": list(links.get("exclude_domains", []) or []),
+        "exclude_urls": {
+            source: list(excluded_urls.get(source, []) or [])
+            for source in sorted(kitconfig.LINK_SOURCES)
+        },
+    }
+
+
+def save_link_rules(data: dict) -> dict:
+    raw_domains = data.get("exclude_domains", [])
+    if isinstance(raw_domains, str):
+        raw_domains = re.split(r"[\n,]+", raw_domains)
+    domains = []
+    invalid = []
+    for value in raw_domains or []:
+        raw = str(value).strip()
+        if not raw:
+            continue
+        normalized = kitconfig.normalize_link_domain(raw)
+        if normalized:
+            if normalized not in domains:
+                domains.append(normalized)
+        else:
+            invalid.append(raw)
+    settings = kitconfig.load()
+    settings.setdefault("links", {})["exclude_domains"] = domains
+    kitconfig.save(settings)
+    _clear_link_cache()
+    return {"saved": True, "exclude_domains": domains, "invalid": invalid}
+
+
+def save_link_exclusion(data: dict) -> dict:
+    source = str(data.get("source") or "").strip()
+    if source not in kitconfig.LINK_SOURCES:
+        raise ValueError("알 수 없는 링크 출처")
+    url = kitconfig.normalize_link_url(str(data.get("url") or ""))
+    if not url:
+        raise ValueError("유효하지 않은 링크 URL")
+    settings = kitconfig.load()
+    links = settings.setdefault("links", {})
+    excluded_urls = links.setdefault("exclude_urls", {})
+    values = {
+        kitconfig.normalize_link_url(item)
+        for item in (excluded_urls.get(source, []) or [])
+    }
+    excluded = bool(data.get("excluded", True))
+    if excluded:
+        values.add(url)
+    else:
+        values.discard(url)
+    excluded_urls[source] = sorted(value for value in values if value)
+    kitconfig.save(settings)
+    _clear_link_cache()
+    return {"saved": True, "source": source, "url": url, "excluded": excluded}
+
+
+def _link_root(source: str) -> Path:
+    vault = kitconfig.vault_path()
+    if source == "github":
+        return vault / "knowledge" / "github-stars" / "repos"
+    if source in {"kakao", "other"}:
+        return vault / "knowledge" / "links" / "nodes"
+    raise ValueError("알 수 없는 링크 출처")
+
+
+def _node_item(source: str, url: str, title: str, date: str = "", summary: str = "") -> dict:
+    return {
+        "id": f"{source}:{filename_for(LinkNode(url=url))}",
+        "title": title or url,
+        "url": url,
+        "domain": domain_for(url),
+        "date": date,
+        "summary": " ".join(summary.split()),
+        "needs_enrichment": not bool(summary.strip()),
+    }
+
+
+def _github_items() -> list[dict]:
+    items = {}
+    root = _link_root("github")
+    if not root.exists():
+        return []
+    for path in root.glob("*.md"):
+        if path.name == "README.md":
+            continue
+        fm = _parse_fm(path.read_text(encoding="utf-8", errors="ignore"))
+        url = normalize_url(str(fm.get("url") or ""))
+        if not url:
+            continue
+        candidate = {
+            "id": f"github:{path.name}",
+            "title": str(fm.get("title") or path.stem),
+            "url": url,
+            "domain": domain_for(url),
+            "date": str(fm.get("date") or ""),
+            "summary": " ".join(str(fm.get("summary") or "").split()),
+        }
+        candidate["needs_enrichment"] = not bool(candidate["summary"])
+        candidate["excluded"] = kitconfig.is_link_excluded(url, "github")
+        current = items.get(url)
+        if current is None or len(candidate["summary"]) > len(current["summary"]):
+            items[url] = candidate
+    return list(items.values())
+
+
+def _kakao_items() -> list[dict]:
+    nodes: dict[str, dict] = {}
+    github_urls = {item["url"] for item in _link_items("github") if not item.get("excluded")}
+    vault = kitconfig.vault_path()
+    for pattern in ("kakao-links*.json", "kakao-*-links*.json"):
+        for path in vault.joinpath("ontology").glob(pattern):
+            if path.name.endswith(".tmp.json"):
+                continue
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            links = data.get("links") if isinstance(data, dict) else None
+            if not isinstance(links, list):
+                continue
+            for link in links:
+                if not isinstance(link, dict):
+                    continue
+                url = normalize_url(str(link.get("url") or ""))
+                if not url or url in github_urls:
+                    continue
+                title = " ".join(str(link.get("title") or url).split())
+                date = str(link.get("date") or "")
+                summary = str(link.get("summary") or "")
+                item = nodes.setdefault(url, _node_item("kakao", url, title, date, summary))
+                item["excluded"] = kitconfig.is_link_excluded(url, "kakao")
+                if len(title) > len(item["title"]):
+                    item["title"] = title
+                if date and (not item["date"] or date < item["date"]):
+                    item["date"] = date
+                if summary and not item["summary"]:
+                    item["summary"] = " ".join(summary.split())
+                    item["needs_enrichment"] = False
+    return list(nodes.values())
+
+
+def _other_items() -> list[dict]:
+    nodes: dict[str, dict] = {}
+    excluded = {item["url"] for item in _link_items("github") if not item.get("excluded")}
+    excluded.update(item["url"] for item in _link_items("kakao") if not item.get("excluded"))
+    root = kitconfig.vault_path() / "source" / "safari-tabs"
+    if not root.exists():
+        return []
+    for path in root.rglob("*.md"):
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        date = date_from_path(path)
+        seen_spans = set()
+        for match in MARKDOWN_LINK_RE.finditer(text):
+            seen_spans.add(match.span(2))
+            url = normalize_url(match.group(2))
+            if url and url not in excluded:
+                item = nodes.setdefault(url, _node_item("other", url, match.group(1), date))
+                item["excluded"] = kitconfig.is_link_excluded(url, "other")
+        for match in BARE_URL_RE.finditer(text):
+            if any(start <= match.start() < end for start, end in seen_spans):
+                continue
+            url = normalize_url(match.group(0).rstrip(").,;"))
+            if url and url not in excluded:
+                item = nodes.setdefault(url, _node_item("other", url, domain_for(url), date))
+                item["excluded"] = kitconfig.is_link_excluded(url, "other")
+    return list(nodes.values())
+
+
+def _link_items(source: str) -> list[dict]:
+    now = time.monotonic()
+    with _LINK_CACHE_LOCK:
+        cached = _LINK_CACHE.get(source)
+        if cached and now - cached[0] < 30:
+            return cached[1]
+    builders = {"github": _github_items, "kakao": _kakao_items, "other": _other_items}
+    try:
+        items = builders[source]()
+    except KeyError as error:
+        raise ValueError("알 수 없는 링크 출처") from error
+    items.sort(key=lambda item: (item["date"], item["title"].casefold()), reverse=True)
+    with _LINK_CACHE_LOCK:
+        _LINK_CACHE[source] = (now, items)
+    return items
+
+
+def get_links(source: str = "github", query: str = "", page: int = 1, limit: int = 50,
+              include_excluded: bool = False) -> dict:
+    if source not in kitconfig.LINK_SOURCES:
+        raise ValueError("알 수 없는 링크 출처")
+    page = max(1, int(page))
+    limit = max(1, min(int(limit), 100))
+    query = str(query).strip().casefold()
+    items = _link_items(source)
+    items = [item for item in items if include_excluded or not item.get("excluded")]
+    if query:
+        items = [item for item in items if query in " ".join((
+            item["title"], item["url"], item["domain"], item["summary"],
+        )).casefold()]
+    total = len(items)
+    start = (page - 1) * limit
+    return {"source": source, "query": query, "page": page, "limit": limit,
+            "total": total, "items": items[start:start + limit]}
+
+
+def _note_body(text: str) -> str:
+    if not text.startswith("---"):
+        return text.strip()
+    end = text.find("\n---", 3)
+    return text[end + 4:].strip() if end != -1 else text.strip()
+
+
+def _link_has_source(fm: dict, source: str) -> bool:
+    if source == "github":
+        return True
+    sources = fm.get("sources") or []
+    if isinstance(sources, str):
+        sources = [sources]
+    if source == "kakao":
+        return "kakao" in sources
+    return "safari" in sources or not sources
+
+
+def get_link_detail(link_id: str) -> dict:
+    source, separator, filename = str(link_id).partition(":")
+    if source not in kitconfig.LINK_SOURCES or not separator or Path(filename).name != filename or not filename.endswith(".md"):
+        raise ValueError("유효하지 않은 링크 ID")
+    path = _link_root(source) / filename
+    if not path.is_file():
+        raise FileNotFoundError(filename)
+    text = path.read_text(encoding="utf-8", errors="ignore")
+    fm = _parse_fm(text)
+    if not _link_has_source(fm, source):
+        raise ValueError("링크 출처가 일치하지 않습니다")
+    metadata_keys = ("date", "domain", "sources", "source_count", "language", "github_stars",
+                     "topics", "카테고리", "학습상태", "enriched")
+    return {"id": link_id, "source": source,
+            "title": str(fm.get("title") or path.stem), "url": str(fm.get("url") or ""),
+            "summary": str(fm.get("summary") or ""),
+            "metadata": {key: fm[key] for key in metadata_keys if fm.get(key) not in (None, "", [])},
+            "content": _note_body(text)}
+
+
+def delete_link(data: dict) -> dict:
+    source, separator, filename = str(data.get("id") or "").partition(":")
+    if source not in kitconfig.LINK_SOURCES or not separator or Path(filename).name != filename or not filename.endswith(".md"):
+        raise ValueError("유효하지 않은 링크 ID")
+    path = _link_root(source) / filename
+    if not path.is_file():
+        raise FileNotFoundError(filename)
+    text = path.read_text(encoding="utf-8", errors="ignore")
+    fm = _parse_fm(text)
+    url = kitconfig.normalize_link_url(str(fm.get("url") or ""))
+    if not url:
+        raise ValueError("링크 URL이 없는 노트는 삭제할 수 없습니다")
+    save_link_exclusion({"source": source, "url": url, "excluded": True})
+    removed = False
+    if source == "github":
+        path.unlink()
+        removed = True
+    else:
+        raw_sources = fm.get("sources") or []
+        if isinstance(raw_sources, str):
+            raw_sources = [raw_sources]
+        node_sources = {kitconfig.link_source_kind(str(item)) for item in raw_sources}
+        if not node_sources or node_sources == {source}:
+            path.unlink()
+            removed = True
+    _clear_link_cache()
+    return {"deleted": removed, "excluded": True, "source": source, "url": url}
+
+
 def save_rooms(data: dict) -> dict:
     vault = kitconfig.vault_path()
     cfg = kitconfig.load()
@@ -318,6 +610,20 @@ class Handler(BaseHTTPRequestHandler):
                     params.get("chat_id", [""])[0],
                     int(params.get("limit", [5])[0]),
                 ))
+            elif parsed.path == "/api/links":
+                params = parse_qs(parsed.query)
+                self._json(get_links(
+                    params.get("source", ["github"])[0],
+                    params.get("q", [""])[0],
+                    int(params.get("page", [1])[0]),
+                    int(params.get("limit", [50])[0]),
+                    params.get("include_excluded", ["0"])[0].lower() in {"1", "true", "yes", "on"},
+                ))
+            elif parsed.path == "/api/link-rules":
+                self._json(get_link_rules())
+            elif parsed.path == "/api/link":
+                params = parse_qs(parsed.query)
+                self._json(get_link_detail(params.get("id", [""])[0]))
             elif parsed.path == "/api/job":
                 self._json(job_status())
             else:
@@ -330,12 +636,24 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", "0"))
             data = json.loads(self.rfile.read(length) or b"{}")
             if self.path == "/api/config":
-                kitconfig.save(kitconfig._merge(kitconfig.load(), data))
+                merged = kitconfig._merge(kitconfig.load(), data)
+                kitconfig.save(merged)
+                if "vault_path" in data:
+                    vault_path = str(merged.get("vault_path") or "").strip()
+                    if vault_path:
+                        os.environ["OWNTOLOGY_VAULT"] = str(Path(vault_path).expanduser())
+                _clear_link_cache()
                 self._json({"saved": True})
             elif self.path == "/api/people":
                 self._json(save_person(data))
             elif self.path == "/api/rooms":
                 self._json(save_rooms(data))
+            elif self.path == "/api/link-rules":
+                self._json(save_link_rules(data))
+            elif self.path == "/api/link-exclusion":
+                self._json(save_link_exclusion(data))
+            elif self.path == "/api/link-delete":
+                self._json(delete_link(data))
             elif self.path == "/api/run":
                 self._json(start_run())
             elif self.path == "/api/sync":

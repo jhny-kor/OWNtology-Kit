@@ -119,6 +119,50 @@ def main() -> int:
             assert 'id="roomFilter"' in html
             assert 'class="room-exclude"' in html
             assert "/api/room-messages?chat_id=" in html
+
+            repo = vault / "knowledge" / "github-stars" / "repos"
+            repo.mkdir(parents=True)
+            (repo / "repo.md").write_text(
+                '---\ntitle: "owner/repo"\nurl: "https://github.com/owner/repo"\n---\n저장된 링크 내용',
+                encoding="utf-8",
+            )
+            safari = vault / "source" / "safari-tabs"
+            safari.mkdir(parents=True)
+            (safari / "tabs-2026-07-19.md").write_text(
+                "[예시](https://example.com/page)", encoding="utf-8")
+            ontology = vault / "ontology"
+            ontology.mkdir(parents=True)
+            (ontology / "kakao-links-2026.json").write_text(json.dumps({
+                "links": [{"title": "카톡 링크", "url": "https://kakao.test/a", "date": "2026-07-19"}],
+            }), encoding="utf-8")
+            server._LINK_CACHE.clear()
+            assert server.get_links("github")["items"][0]["title"] == "owner/repo"
+            assert server.get_links("kakao")["items"][0]["title"] == "카톡 링크"
+            assert server.get_links("other")["items"][0]["domain"] == "example.com"
+            assert server.get_link_detail("github:repo.md")["content"] == "저장된 링크 내용"
+
+            rules = server.save_link_rules({"exclude_domains": "example.com\n잘못된 값"})
+            assert rules["exclude_domains"] == ["example.com"]
+            assert rules["invalid"] == ["잘못된 값"]
+            assert server.get_links("other")["total"] == 0
+            saved_before_settings = kitconfig.load()
+            saved_before_settings["links"]["exclude_domains"] = ["example.com"]
+            kitconfig.save(kitconfig._merge(saved_before_settings, {"me": {"name": "설정 저장 테스트"}}))
+            assert kitconfig.load()["links"]["exclude_domains"] == ["example.com"]
+            excluded = server.save_link_exclusion({
+                "source": "github", "url": "https://github.com/owner/repo", "excluded": True,
+            })
+            assert excluded["excluded"]
+            assert server.get_links("github")["total"] == 0
+            assert server.get_links("github", include_excluded=True)["items"][0]["excluded"]
+
+            html = (KIT / "web" / "index.html").read_text(encoding="utf-8")
+            assert '<button data-tab="links">링크</button>' in html
+            assert 'data-link-source="github"' in html
+            assert 'id="linkSearch"' in html
+            assert "/api/links?" in html
+            assert "/api/link?id=" in html
+            assert "/api/link-exclusion" in html
         finally:
             kitconfig.CONFIG_FILE = old_config_file
             if old_vault is None:

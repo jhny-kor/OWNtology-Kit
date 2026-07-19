@@ -14,12 +14,15 @@ from urllib.parse import urlparse
 
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from kitlib.config import vault_path as _vp
+from kitlib import config as kitconfig
+
+_vp = kitconfig.vault_path
 VAULT = _vp()
 SAFARI_DIR = VAULT / "source" / "safari-tabs"
 KAKAO_DIR = VAULT / "ontology"
 OUT_DIR = VAULT / "knowledge" / "links" / "nodes"
 GITHUB_STARS_REPOS = VAULT / "knowledge" / "github-stars" / "repos"
+_LINK_SETTINGS = kitconfig.load()
 
 MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)\]\((https?://[^)\s]+(?:\)[^)\s]+)*[^)\s]*)\)")
 BARE_URL_RE = re.compile(r"(?<!\()https?://[^\s<>\"]+")
@@ -134,6 +137,8 @@ def date_from_path(path: Path) -> str:
 def add_node(nodes: dict[str, LinkNode], url: str, title: str, source: LinkSource, summary: str = "") -> None:
     key = normalize_url(url)
     if not key.startswith(("http://", "https://")):
+        return
+    if kitconfig.is_link_excluded(key, source.kind, _LINK_SETTINGS):
         return
     node = nodes.setdefault(key, LinkNode(url=key))
     clean_title = " ".join((title or "").split())
